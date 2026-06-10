@@ -88,6 +88,18 @@ soft drag, not a hard filter — see factor 10 in `profile/parameters.md`.)
   add it to `profile/criteria.md`, re-run. That loop is how triage improves.
 
 ## Commands
+> **PYTHON PATH — DO NOT SEARCH FOR IT. EVER.** `python`/`py` are NOT on the Claude
+> tool PATH (stale-session PATH gotcha). The interpreter is always at this exact path —
+> use it verbatim, never run `where`/`Get-Command`/`Test-Path` to "find" it:
+> ```
+> C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe
+> ```
+> Prefix UTF-8 to avoid cp1252 errors on German text. Canonical invocation:
+> ```powershell
+> $env:PYTHONUTF8=1; & "C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe" <args>
+> ```
+> Or just call `./py.ps1 <args>` from repo root (thin wrapper, same thing).
+
 - `python ingest/run.py` — fetch + enrich + dedup → `data/jobs.jsonl` (daily).
 - Ask Claude: *"triage the new jobs"* → invokes the triage subagent.
 - `python evals/run_eval.py` — score triage against the gold set.

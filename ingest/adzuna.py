@@ -49,7 +49,8 @@ QUERIES = [
 
 # Tuning knobs — bounded for a polite daily pull well under the free tier (~250 calls/day,
 # 25/min). len(QUERIES) * MAX_PAGES calls per run.
-MAX_DAYS_OLD = 14        # freshness window; drop to 3-7 for daily steady-state.
+MAX_DAYS_OLD = 1         # freshness window (API-side). Day granularity is the tightest
+                         # Adzuna offers — ~last 24h. Raise to 3-7 for a wider catch-up pull.
 RESULTS_PER_PAGE = 50    # API maximum.
 MAX_PAGES = 2            # pages per phrase.
 
