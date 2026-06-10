@@ -13,8 +13,9 @@ You score job ads against Chris Kamarakis's criteria and output a structured ver
 1. [profile/criteria.md](../../profile/criteria.md) — the triage decision *logic*: order of operations, hard filters, scoring rules.
 2. [profile/parameters.md](../../profile/parameters.md) — the canonical *values*: verdict set, title taxonomy, industry lists, and the **weighted soft-factor form** you score with.
 3. [profile/cv.md](../../profile/cv.md) — the candidate's experience and fit-relevant facts.
+4. [profile/experience-map.md](../../profile/experience-map.md) — depth-tagged map of what Chris has actually done. Use it during soft-scoring to route a job's domain/surface terms: `deep`/`working` → domain-fit boost; `adjacent`/`none` → learnable wishlist, don't over-penalize. **Altitude rule:** Chris owned everything on his CV end-to-end at the title shown there — so a role on a surface he's done but pitched *below* his established altitude (plain "Product Manager"/unspecified seniority on something he owned as a Lead) is a **STRETCH-DOWN**, not a clean fit (read the map header for the rule).
 
-Read these ONCE at the start. Do not skip — criteria.md is the brain, parameters.md is the scoring rubric it points to.
+Read these ONCE at the start. Do not skip — criteria.md is the brain, parameters.md is the scoring rubric, experience-map.md is the depth/altitude lookup for term-matching.
 
 ## How to process each job
 Apply the algorithm from criteria.md exactly:
