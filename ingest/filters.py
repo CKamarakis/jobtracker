@@ -25,7 +25,7 @@ Two deliberate design rules:
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 
 # Ads older than this are cut even when a search specifies no date range — stale
 # posts are usually filled or ghost listings. Tune in one place.
@@ -106,3 +106,36 @@ def prefilter(rec: dict, today: date, max_age_days: int = MAX_AGE_DAYS) -> str |
     if is_stale(rec.get("posted_date", ""), today, max_age_days):
         return f"stale: posted {rec.get('posted_date')} (> {max_age_days}d)"
     return None
+
+
+# ── Freshness re-aging ────────────────────────────────────────────────────────
+# DISTINCT from the prefilter `is_stale` gate above. That one runs ONCE, at insert,
+# on day granularity (30d catch-all). This runs on EVERY pool member EVERY run, on
+# hour granularity, to close the gap that bit us: the fetch window only gates ENTRY,
+# so once admitted a job never re-aged and the pool grew unbounded with stale ads.
+# Default mirrors arbeitnow's fetch cutoff (DEFAULT_MAX_AGE_HOURS) — the active pool
+# should hold only what a fresh fetch would still admit. Widen for a catch-up run.
+DEFAULT_FRESH_HOURS = 28
+
+
+def is_expired(rec: dict, now_ts: float, fresh_hours: float = DEFAULT_FRESH_HOURS) -> bool:
+    """True if the job has aged past the freshness window (should leave the active pool).
+
+    Precise path: posted_ts (Unix epoch) vs now — hour-accurate.
+    Fallback: legacy records predating posted_ts have only a date. Expire them ONLY when
+    unambiguously past the window — i.e. even a 23:59 post on that date would exceed it —
+    so a borderline 'yesterday' record is kept, not guessed stale (recall over precision).
+    Missing both fields → never expire (don't drop on absent data)."""
+    window_s = fresh_hours * 3600
+    ts = rec.get("posted_ts")
+    if isinstance(ts, (int, float)):
+        return (now_ts - ts) > window_s
+    pd = rec.get("posted_date")
+    if pd:
+        try:
+            d = date.fromisoformat(pd)
+        except ValueError:
+            return False
+        latest_possible = datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=timezone.utc).timestamp()
+        return (now_ts - latest_possible) > window_s
+    return False

@@ -102,6 +102,12 @@ def merge_job(existing: dict, incoming: dict) -> dict:
     if dates:
         merged["posted_date"] = min(dates)
 
+    # posted_ts mirrors posted_date: keep the earliest known epoch so a re-seen ad keeps
+    # its original age (freshness must not reset just because a second board re-listed it).
+    stamps = [t for t in (existing.get("posted_ts"), incoming.get("posted_ts")) if isinstance(t, (int, float))]
+    if stamps:
+        merged["posted_ts"] = min(stamps)
+
     # Backfill empty scalar fields from the incoming record (never overwrite a real value).
     for field in ("location", "remote", "url", "ats_url", "title", "company"):
         if not existing.get(field) and incoming.get(field):

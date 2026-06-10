@@ -61,8 +61,10 @@ def _to_record(item: dict) -> dict:
     location = item.get("location", "")
 
     posted = ""
+    posted_ts = None
     created = item.get("created_at")
     if isinstance(created, (int, float)):
+        posted_ts = float(created)  # keep the epoch — freshness re-aging needs hour precision
         posted = datetime.fromtimestamp(created, tz=timezone.utc).date().isoformat()
 
     return {
@@ -78,6 +80,7 @@ def _to_record(item: dict) -> dict:
         "ats_url": "",
         "description": html_to_text(item.get("description", "")),
         "posted_date": posted,
+        "posted_ts": posted_ts,  # Unix epoch (ingest time); None if unparseable
         "status": "new",
     }
 

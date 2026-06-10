@@ -100,9 +100,14 @@ def _to_record(item: dict) -> dict:
     description = html_to_text(item.get("description", ""))
 
     posted = ""
+    posted_ts = None
     created = item.get("created")  # ISO 8601, e.g. '2026-05-29T11:58:20Z'
     if isinstance(created, str) and created:
         posted = created[:10]  # date portion is already YYYY-MM-DD
+        try:  # keep the epoch too — freshness re-aging needs hour precision
+            posted_ts = datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            posted_ts = None
 
     blob = f"{title}\n{description}".lower()
     remote = any(m in blob for m in _REMOTE_MARKERS)
@@ -120,6 +125,7 @@ def _to_record(item: dict) -> dict:
         "ats_url": "",
         "description": description,
         "posted_date": posted,
+        "posted_ts": posted_ts,  # Unix epoch (post time); None if unparseable
         "status": "new",
     }
 
