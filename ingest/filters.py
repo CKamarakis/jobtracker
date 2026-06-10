@@ -32,16 +32,37 @@ from datetime import date
 MAX_AGE_DAYS = 30
 
 # Permissive denylist: word-boundary matches on unambiguous non-fits for a senior
-# product/eng leader. Seniority floor + clearly-off role families only. When in
-# doubt, it is NOT here — let triage decide. \b avoids substring traps (e.g. "jr"
-# inside another word). Add German equivalents because the board is DE-heavy.
+# product/eng leader. Seniority floor + clearly-off role FAMILIES only — never a
+# sector. (e.g. we deny "Pflegefachkraft" the role, but not "...Gesundheitswesen"
+# the domain, which can front a real ops/product fit.) When in doubt, it is NOT
+# here — let triage decide. \b avoids substring traps (e.g. "jr" inside a word).
+# German equivalents included because the board is DE-heavy and ~83% off-family.
 _TITLE_DENY = re.compile(
     r"\b("
+    # seniority floor / non-permanent
     r"junior|jr|intern|internship|trainee|apprentice|graduate|"
     r"working\s+student|werkstudent|praktikum|praktikant|ausbildung|"
-    r"sales|account\s+executive|sdr|bdr|recruiter|"
-    r"accountant|bookkeeper|paralegal"
+    r"teilzeit|minijob|studentische|"
+    # off-role-family: sales / recruiting / admin
+    r"sales|account\s+executive|sdr|bdr|recruiter|paralegal|"
+    # off-role-family: accounting / tax clerks (buchhalt* = -er/-ung/bilanz-/lohn-)
+    r"accountant|bookkeeper|buchhalt|steuerberater|steuerfachangestellte|kreditoren|"
+    # off-role-family: skilled-trade / care / manual
+    r"pflege|pflegefachkraft|elektroniker|monteur|mechaniker|reinigung|"
+    r"verkäufer|lagerist|koch|"
+    # off-role-family: creative IC (a 'Head of Design' lead survives — no bare 'designer')
+    r"grafik|graphic\s+designer|mediengestalter|texter|copywriter"
     r")\b",
+    re.IGNORECASE,
+)
+
+# SAP roles on this board are overwhelmingly consultant/specialist ICs — a non-fit.
+# But we DON'T blanket-deny "sap": a "Product Manager, SAP integrations" should reach
+# triage. So reject only when SAP co-occurs with a consultant/specialist/dev marker.
+_SAP_RE = re.compile(r"\bsap\b", re.IGNORECASE)
+_SAP_COTERM_RE = re.compile(
+    r"\b(consultant|consulting|berater|spezialist|specialist|entwickler|developer|"
+    r"administrator|basis|abap|inhouse)\b",
     re.IGNORECASE,
 )
 
@@ -53,9 +74,12 @@ def title_rejected(title: str) -> str | None:
     expensive enrichment fetch — that pre-enrichment gate is where this saves the
     most resources, not just triage tokens.
     """
-    m = _TITLE_DENY.search(title or "")
+    t = title or ""
+    m = _TITLE_DENY.search(t)
     if m:
         return f"title denylist: '{m.group(0).lower()}'"
+    if _SAP_RE.search(t) and _SAP_COTERM_RE.search(t):
+        return "title denylist: 'sap' specialist/consultant"
     return None
 
 
