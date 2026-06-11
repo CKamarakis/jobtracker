@@ -18,6 +18,9 @@ data/*.bak
 # Eval run artifacts (raw logs from each eval run)
 evals/runs/
 
+# API dev-server runtime PID (written by api/serve.ps1)
+api/.server.pid
+
 # IDE / OS noise
 .DS_Store
 Thumbs.db
