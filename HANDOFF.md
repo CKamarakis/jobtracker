@@ -1,49 +1,55 @@
-# HANDOFF — 2026-06-11 (Phase B FastAPI shipped; next = Phase C React)
+# HANDOFF — 2026-06-11 (Phase C React frontend shipped; next = Phase D Postgres)
 
 Transient note for the next session. Full rationale persisted in memory:
-`project_state_2026-06-11.md` (+ `project_app_roadmap.md` for the phased plan).
+`project_state_2026-06-11.md` / `-phase-c.md` (+ `project_app_roadmap.md` for the plan).
 
 ## Where we are (good state — nothing broken)
-- **PIVOTED from pipeline tuning to building the app.** Chris's steer: enough
-  evals/ingest for now — build app functionality. Don't re-offer eval/fetch work
-  unless he asks.
-- **Phase B SHIPPED & MERGED** (PR #5, commit `24b5001` on `main`; local synced).
-  Read-only FastAPI over the existing pipeline artifacts. New `api/` package:
-  - `api/data_source.py` = **THE SEAM**. Every route reads through it; nothing
-    touches a file path directly. Phase D swaps this ONE module to Postgres and the
-    rest is untouched. Reuses `ingest/store.load_jobs`.
-  - `api/models.py` = Pydantic `JobSummary`/`JobDetail`/`MarkdownDoc`; `from_record()`
-    is the single record→API mapping.
-  - `api/main.py` = thin routes + CORS pre-opened for Vite 5173 / CRA 3000.
-  - Endpoints: `/health`, `/jobs?status=&verdict=` (strongest-first), `/jobs/{id}`,
-    `/profile[/{name}]`, `/dossiers[/{slug}]`, `/cover-letters[/{slug}]`.
-  - `api/serve.ps1` = start/stop/restart/open/status (PID-file + post-start `/health`
-    poll, fails loudly on bad port bind). `.server.pid` gitignored.
-  - `api/README.md` = **LIVING docs** — keep updated as the API changes.
-- **Pool:** 193 jobs in `data/jobs.jsonl`, triaged (3 strong / 2 fit / 5 stretch /
-  152 reject / 31 untriaged), 5 shortlisted. From ~06-10; NOT re-fetched on purpose.
+- **Phase B (API) DONE & merged** (PR #5, `24b5001`). Read-only FastAPI in `api/`;
+  `api/data_source.py` = THE SEAM (swap to Postgres in D, nothing else changes).
+  Run: `./api/serve.ps1 start` → :8000, `/docs` for Swagger. `api/README.md` = living docs.
+- **Phase C (React frontend) SHIPPED this session** — `web/`, NOT yet committed/PR'd.
+  - **Stack DEVIATION from ROADMAP:** Tailwind v4 + **shadcn/ui**, *not* MUI. Chris's
+    call — higher market/CV relevance + teaches CSS composition. Recorded in ROADMAP.
+  - Vite + React 19 + **TypeScript**. `npm run dev` → http://localhost:5173 (CORS pre-open).
+  - **API-as-contract, frontend half:** `src/api/types.ts` hand-mirrors the Pydantic
+    models; `src/api/client.ts` is the only `fetch` caller (typed fns per endpoint).
+  - **Data fetching = hand-rolled `useAsync` hook** (`src/hooks/`) on purpose — see the
+    loading/error/data state machine + stale-result guard before TanStack Query hides it.
+    TanStack Query is the noted Phase-D upgrade.
+  - **Transient shortlist** = React Context (`src/shortlist/`), header badge counts live,
+    lost on refresh BY DESIGN (persistence = Phase D write-back behind the seam).
+  - Pages: list (`/`, verdict/status filters → refetch, strongest-first table, row→detail,
+    star toggle) + detail (`/jobs/:id`, full record + markdown desc via react-markdown `prose`).
+  - `web/README.md` = run + file-layout living docs. `web/DECISIONS.md` = ADR-style
+    rationale for every stack choice (Tailwind/shadcn, TS, useAsync-vs-TanStack, Context,
+    routing) with external reference links.
+  - **Verified:** `npm run build` clean (tsc+vite); API returns 3 strong/2 fit/5 stretch
+    sorted; CORS allows :5173. Chris did a **quick browser click-through** at end of session
+    (no issues flagged) — not a thorough QA pass, but it renders.
+  - Both dev servers were started then **stopped** at end of session (clean state).
+  - **Committed + pushed + PR'd:** branch `phase-c-react-frontend`, commit `d7f1161`,
+    **PR #6** (open, not merged) → https://github.com/CKamarakis/jobtracker/pull/6
+- **Pool:** 193 jobs in `data/jobs.jsonl`, triaged. From ~06-10; NOT re-fetched on purpose.
 
-## Run the API
+## Run the whole thing
 ```powershell
-./api/serve.ps1 start    # then: ./api/serve.ps1 open  → http://127.0.0.1:8000/docs
-./api/serve.ps1 status   # running? + live /health
-./api/serve.ps1 stop
+./api/serve.ps1 start          # API on :8000 (data source — start first)
+cd web; npm install; npm run dev   # frontend on :5173
 ```
-Manual: `$env:PYTHONUTF8=1; & <py> -m uvicorn api.main:app --reload`.
 
-## DO THIS NEXT — Phase C (React + MUI frontend)
-Build the UI that consumes the Phase B endpoints (ROADMAP.md Phase C):
-list (filter by verdict/status, strongest first) → detail page → client-side
-routing → select → **transient** shortlist (no DB yet — that's Phase D). React may
-be newer ground; teach the component/hooks/routing/MUI choices as we go.
-Make sure the API is up (`./api/serve.ps1 status`) so the frontend has a target.
+## DO THIS NEXT
+1. **Review + merge PR #6** (`phase-c-react-frontend` → main). Optional: a deeper QA pass
+   on the running app first (Chris only did a quick click-through). `gh`→full path from Bash.
+2. Then **Phase D**: Postgres behind `api/data_source.py`; add write endpoints (shortlist/
+   status/notes) → swap the frontend's transient Context for real persistence; consider
+   TanStack Query. SQLAlchemy + Alembic + local PG via Docker (see ROADMAP).
 
-## Gotcha learned this session
-An orphan uvicorn from a "stopped" background task kept squatting port 8000 → the
-new server couldn't bind and died, but a naive start would report success. Fix =
-PID file + post-start health poll (now baked into `serve.ps1`).
-
-## Env
-Python: `C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe` (full
-path — PATH is session-mangled; fastapi+uvicorn installed here).
-git → Bash tool. gh → `"/c/Program Files/GitHub CLI/gh.exe"` from Bash tool.
+## Env / gotchas
+- Node 24 / npm 11. Tailwind **v4** = CSS-first (`@import "tailwindcss"` in index.css,
+  `@tailwindcss/vite` plugin) — no tailwind.config.js. shadcn init wrote design tokens
+  + Geist font into index.css; kept the `@plugin typography` line (markdown `prose`).
+- Path alias `@/*`→`src/*` lives in 3 files (vite.config + 2 tsconfigs); NO `baseUrl`
+  (deprecated TS7). tsconfig has `erasableSyntaxOnly` → no constructor param-properties.
+- shadcn Select (Base UI) `onValueChange` gives `string | null` — handlers must accept null.
+- Python: `C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe` (full path).
+  git → Bash tool. gh → `"/c/Program Files/GitHub CLI/gh.exe"` from Bash tool.
