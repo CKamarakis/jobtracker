@@ -16,8 +16,12 @@ Chris wants his *own actions* (shortlist, notes, applied-dates) to survive a res
 
 ## Architecture decisions (locked)
 - **Monolith, single repo.** Microservices is overhead for a single-user local tool.
-- **Stack:** React + Material UI (frontend) ↔ FastAPI (Python, matches existing `ingest/`) ↔
-  files now, **Postgres later**.
+- **Stack:** React + **Tailwind v4 + shadcn/ui** (frontend) ↔ FastAPI (Python, matches existing
+  `ingest/`) ↔ files now, **Postgres later**.
+  - *Revised 2026-06-11 (Phase C):* dropped Material UI for **Tailwind + shadcn/ui**. Reason:
+    higher current market/CV relevance (the combo Chris keeps seeing in ads) and it teaches CSS
+    composition, not just a component API. Cost: more hand-built UI than MUI's batteries-included
+    components. shadcn = copy-in components (Radix/Base UI + Tailwind), not an npm-locked library.
 - **The API is the stable contract.** Files behind it first; Postgres behind it later; the React
   frontend never notices the swap. This seam makes "files now, DB later" free.
 - **When the DB arrives it's Postgres from day one** (not SQLite-then-migrate): no dialect drift,
@@ -32,7 +36,7 @@ Chris wants his *own actions* (shortlist, notes, applied-dates) to survive a res
 |---|---|---|---|---|---|
 | **A** | Deepen + prove the core loop to a done-bar | local files | Low–Med | 1–2 sessions | in progress |
 | **B** | Thin FastAPI serving jobs / profiles / dossiers as JSON | reads files | Low–Med | 1–2 sessions | not started |
-| **C** | React + MUI: list → profile page → routing → select → transient shortlist → work one-by-one | via API (files) | High | bulk of effort | not started |
+| **C** | React: list → detail page → routing → select → transient shortlist → work one-by-one | via API (files) | High | bulk of effort | **shipped 2026-06-11** (Tailwind+shadcn, not MUI) |
 | **D** | DB arrives: persist shortlist, notes, statuses, applied-dates | Postgres | Med–High | 2–4 sessions | not started |
 | **E** | Stats dashboard | Postgres | Med | 1–3 sessions | not started |
 | **F (step 2)** | Subagents → API endpoints, auth, hosting, generalize for others | Postgres | High | open-ended | not started |
