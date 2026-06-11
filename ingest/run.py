@@ -10,6 +10,8 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,7 +30,7 @@ SOURCES = [
 ]
 
 
-def main() -> None:
+def main(fresh_hours: float = filters.DEFAULT_FRESH_HOURS) -> None:
     jobs = store.load_jobs(JOBS_PATH)
     start_count = len(jobs)
     print(f"Loaded {start_count} existing jobs from {JOBS_PATH.relative_to(REPO_ROOT)}")
@@ -58,12 +60,31 @@ def main() -> None:
                 jobs[key] = rec
                 added += 1
 
+    # Re-age the whole pool, not just this run's fetch: expire untriaged jobs past the
+    # freshness window. This is the ongoing complement to the fetch-time cutoff — admitted
+    # jobs otherwise never age out. Only `new` (untriaged) expires; shortlisted/applied are
+    # human-engaged and stay regardless of age, skipped is already terminal.
+    now_ts = time.time()
+    expired = 0
+    for rec in jobs.values():
+        if rec.get("status") == "new" and filters.is_expired(rec, now_ts, fresh_hours):
+            rec["status"] = "expired"
+            rec["skip_reason"] = f"expired: older than {fresh_hours:g}h freshness window"
+            expired += 1
+
     store.save_jobs(JOBS_PATH, jobs)
     print(
-        f"\nDone. +{added} new ({skipped} pre-filtered), {merged} re-seen/merged. "
-        f"Pool: {start_count} -> {len(jobs)} jobs."
+        f"\nDone. +{added} new ({skipped} pre-filtered), {merged} re-seen/merged, "
+        f"{expired} expired (>{fresh_hours:g}h). Pool: {start_count} -> {len(jobs)} jobs."
     )
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Daily job ingestion + pool re-aging.")
+    parser.add_argument(
+        "--fresh-hours", type=float, default=filters.DEFAULT_FRESH_HOURS,
+        help=f"Active-pool freshness window in hours (default {filters.DEFAULT_FRESH_HOURS:g}). "
+             "Raise for a catch-up run that keeps older jobs active.",
+    )
+    args = parser.parse_args()
+    main(fresh_hours=args.fresh_hours)
