@@ -24,8 +24,11 @@ Transient note for the next session. Full rationale persisted in memory:
     rationale for every stack choice (Tailwind/shadcn, TS, useAsync-vs-TanStack, Context,
     routing) with external reference links.
   - **Verified:** `npm run build` clean (tsc+vite); API returns 3 strong/2 fit/5 stretch
-    sorted; CORS allows :5173. **NOT visually eyeballed in a browser** — open :5173 to confirm render.
+    sorted; CORS allows :5173. Chris did a **quick browser click-through** at end of session
+    (no issues flagged) — not a thorough QA pass, but it renders.
   - Both dev servers were started then **stopped** at end of session (clean state).
+  - **Committed + pushed + PR'd:** branch `phase-c-react-frontend`, commit `d7f1161`,
+    **PR #6** (open, not merged) → https://github.com/CKamarakis/jobtracker/pull/6
 - **Pool:** 193 jobs in `data/jobs.jsonl`, triaged. From ~06-10; NOT re-fetched on purpose.
 
 ## Run the whole thing
@@ -35,10 +38,9 @@ cd web; npm install; npm run dev   # frontend on :5173
 ```
 
 ## DO THIS NEXT
-1. **Eyeball the app** at http://localhost:5173 — confirm list/detail/filters/shortlist
-   render (build passed but no browser screenshot was taken). Fix any runtime issues.
-2. **Commit + PR `web/`** (branch off main; `git`→Bash tool, `gh`→full path from Bash).
-3. Then **Phase D**: Postgres behind `api/data_source.py`; add write endpoints (shortlist/
+1. **Review + merge PR #6** (`phase-c-react-frontend` → main). Optional: a deeper QA pass
+   on the running app first (Chris only did a quick click-through). `gh`→full path from Bash.
+2. Then **Phase D**: Postgres behind `api/data_source.py`; add write endpoints (shortlist/
    status/notes) → swap the frontend's transient Context for real persistence; consider
    TanStack Query. SQLAlchemy + Alembic + local PG via Docker (see ROADMAP).
 
