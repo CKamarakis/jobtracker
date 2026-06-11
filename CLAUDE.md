@@ -100,6 +100,18 @@ soft drag, not a hard filter — see factor 10 in `profile/parameters.md`.)
 > ```
 > Or just call `./py.ps1 <args>` from repo root (thin wrapper, same thing).
 
+> **GIT / GH PATHS — SAME RULE, DON'T SEARCH, DON'T RABBIT-HOLE.** Same stale-PATH
+> gotcha hits `git` and `gh`, and they split across shells. Do NOT probe with
+> `where`/`Get-Command`/Glob — use these verbatim:
+> - **`git`** → use the **Bash tool** (git is on its PATH). PowerShell's is unreliable.
+> - **`gh`** → call its full path **from the Bash tool** so it inherits git, e.g.:
+>   ```
+>   "/c/Program Files/GitHub CLI/gh.exe" pr create --base main --head <branch> --title "…" --body "…"
+>   ```
+> - Never run bare `gh` in PowerShell (it can't find git → "unable to find git executable").
+> - Exact locations (already on integrated-terminal PATH via `.vscode/settings.json`):
+>   `C:\Program Files\GitHub CLI\gh.exe` · `C:\Program Files\Git\cmd\git.exe`.
+
 - `python ingest/run.py` — fetch + enrich + dedup → `data/jobs.jsonl` (daily).
 - Ask Claude: *"triage the new jobs"* → invokes the triage subagent.
 - `python evals/run_eval.py` — score triage against the gold set.
