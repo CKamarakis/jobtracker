@@ -76,13 +76,13 @@ def _creds() -> tuple[str, str]:
     return app_id, app_key
 
 
-def _get(page: int, what_phrase: str, app_id: str, app_key: str) -> dict:
+def _get(page: int, what_phrase: str, app_id: str, app_key: str, max_days_old: int = MAX_DAYS_OLD) -> dict:
     params = {
         "app_id": app_id,
         "app_key": app_key,
         "results_per_page": RESULTS_PER_PAGE,
         "what_phrase": what_phrase,
-        "max_days_old": MAX_DAYS_OLD,
+        "max_days_old": max_days_old,
         "sort_by": "date",
         # NOTE: no `where`. country=de already scopes nationally; `where=Germany` matches
         # the English string against German location text and returns zero.
@@ -130,13 +130,16 @@ def _to_record(item: dict) -> dict:
     }
 
 
-def fetch() -> list[dict]:
+def fetch(max_days_old: int = MAX_DAYS_OLD) -> list[dict]:
     """Run each phrase query, paginate, and map to job records.
 
     Dedups within this pull by Adzuna's own job id (phrases overlap — a 'product lead'
     can also match 'head of product'). Returns records with `new` status; run.py owns
     cross-source dedup/merge against jobs.jsonl. One bad query is logged and skipped so a
     single failure doesn't lose the rest of the pull.
+
+    max_days_old: API-side freshness window in days (the search-duration knob the app
+    exposes — 1 / 3 / 7). Day granularity is the tightest Adzuna offers.
     """
     app_id, app_key = _creds()
     seen_ids: set[str] = set()
@@ -145,7 +148,7 @@ def fetch() -> list[dict]:
     for phrase in QUERIES:
         for page in range(1, MAX_PAGES + 1):
             try:
-                payload = _get(page, phrase, app_id, app_key)
+                payload = _get(page, phrase, app_id, app_key, max_days_old)
             except Exception as e:
                 print(f"    [adzuna] query {phrase!r} page {page} failed: {e}")
                 break

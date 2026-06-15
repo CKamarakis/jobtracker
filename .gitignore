@@ -12,8 +12,12 @@ venv/
 
 # Data — generated, not tracked
 data/jobs.jsonl
+data/*.jsonl
 data/status.json
 data/*.bak
+# Fetch/triage runtime + derived personal data (named-company verdicts) — LOCAL ONLY
+data/run_status.json
+data/triage_cache.json
 
 # Eval run artifacts (raw logs from each eval run)
 evals/runs/

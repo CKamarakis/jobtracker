@@ -15,9 +15,13 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from . import data_source as ds
+from . import fetch_runner
 from .models import JobDetail, JobSummary, MarkdownDoc
+
+DURATIONS = {"1d", "3d", "1w"}
 
 app = FastAPI(
     title="Job-Hunt API",
@@ -63,6 +67,45 @@ def get_job(job_id: str) -> JobDetail:
     if rec is None:
         raise HTTPException(status_code=404, detail=f"No job with id {job_id!r}")
     return JobDetail.from_record(rec)
+
+
+# --- Fetch: trigger an ingestion run + poll its status -------------------------
+# The first WRITE path in the API: the dashboard "Go fetch" button drives this. The run
+# happens in a background thread (fetch_runner) because it's slow; the UI polls /fetch/status.
+
+class FetchRequest(BaseModel):
+    sources: list[str] | None = None  # None → all available sources
+    duration: str = "1d"              # 1d | 3d | 1w
+
+
+@app.get("/sources", response_model=list[str])
+def get_sources() -> list[str]:
+    """Source ids the user can toggle in the Go-fetch dialog (don't hardcode in the UI)."""
+    return fetch_runner.available_sources()
+
+
+@app.post("/fetch")
+def post_fetch(req: FetchRequest) -> dict:
+    """Start a fetch (wipe + refill the pool) in the background. 409 if one is running."""
+    valid = set(fetch_runner.available_sources())
+    if req.sources is not None:
+        unknown = [s for s in req.sources if s not in valid]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"Unknown sources: {unknown}")
+        if not req.sources:
+            raise HTTPException(status_code=400, detail="Select at least one source")
+    if req.duration not in DURATIONS:
+        raise HTTPException(status_code=400, detail=f"duration must be one of {sorted(DURATIONS)}")
+    try:
+        return fetch_runner.start(sources=req.sources, duration=req.duration)
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.get("/fetch/status")
+def get_fetch_status() -> dict:
+    """Current/last run state: idle|running|done|error, phase, counts, timestamps."""
+    return fetch_runner.get_status()
 
 
 # --- Markdown docs: profile / dossiers / cover letters -------------------------
