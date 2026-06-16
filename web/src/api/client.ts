@@ -3,7 +3,15 @@
 // functions below are the typed surface the rest of the app calls. Mirrors the
 // route list in api/main.py one-to-one.
 
-import type { JobDetail, JobSummary, MarkdownDoc, Status, Verdict } from "./types";
+import type {
+  FetchRequest,
+  FetchStatus,
+  JobDetail,
+  JobSummary,
+  MarkdownDoc,
+  Status,
+  Verdict,
+} from "./types";
 
 // Configured per-environment via Vite env (.env.development). Fallback keeps it
 // working if the var is missing. import.meta.env is Vite's build-time env object.
@@ -22,10 +30,10 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`);
+    res = await fetch(`${BASE}${path}`, init);
   } catch {
     // fetch only rejects on network failure (server down, CORS, DNS) — surface a
     // human message instead of the opaque "Failed to fetch".
@@ -37,6 +45,16 @@ async function request<T>(path: string): Promise<T> {
     throw new ApiError(res.status, detail?.detail ?? res.statusText);
   }
   return res.json() as Promise<T>;
+}
+
+/** POST JSON and parse the JSON response. Thin wrapper over `request` so the error/network
+ * handling stays in one place — the only difference from a GET is method + body + header. */
+function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 /** Build a query string from defined params only (skip undefined/null). */
@@ -55,6 +73,22 @@ export function listJobs(filters: { status?: Status; verdict?: Verdict } = {}): 
 export function getJob(id: string): Promise<JobDetail> {
   return request<JobDetail>(`/jobs/${encodeURIComponent(id)}`);
 }
+
+// --- Fetch run (WRITE path) --------------------------------------------------
+
+/** Source ids the user can toggle in the Go-fetch dialog (don't hardcode in the UI). */
+export const listSources = () => request<string[]>("/sources");
+
+/** Start a fetch (wipe + refill the pool) in the background. Returns the starting snapshot.
+ * Throws ApiError(409) if a run is already in flight, ApiError(400) on bad sources/duration. */
+export const triggerFetch = (req: FetchRequest) => post<FetchStatus>("/fetch", req);
+
+/** Read the current/last run state (one shot). The dashboard reads this once on load. */
+export const getFetchStatus = () => request<FetchStatus>("/fetch/status");
+
+/** Long-poll: resolves when the in-flight run finishes (server holds the request open).
+ * Returns immediately if nothing is running. The results view awaits this, then loads. */
+export const waitForFetch = () => request<FetchStatus>("/fetch/wait");
 
 // --- Markdown docs -----------------------------------------------------------
 

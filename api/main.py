@@ -108,6 +108,14 @@ def get_fetch_status() -> dict:
     return fetch_runner.get_status()
 
 
+@app.get("/fetch/wait")
+def get_fetch_wait() -> dict:
+    """Long-poll: block until the in-flight run finishes (or ~90s elapses), then return
+    the final status. One held request instead of the client polling — the results view
+    awaits this, then loads the fresh pool. Returns immediately if no run is in flight."""
+    return fetch_runner.wait(timeout=90.0)
+
+
 # --- Markdown docs: profile / dossiers / cover letters -------------------------
 
 def _doc_or_404(slug: str, text: str | None, kind: str) -> MarkdownDoc:
