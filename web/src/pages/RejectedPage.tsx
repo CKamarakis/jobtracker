@@ -4,7 +4,9 @@ import { ArrowLeftIcon } from "lucide-react";
 import { listJobs } from "@/api/client";
 import type { JobSummary } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { JobDetailDialog } from "@/components/JobDetailDialog";
+import { usePagination } from "@/hooks/usePagination";
 import {
   Table,
   TableBody,
@@ -35,6 +37,9 @@ export function RejectedPage() {
   }, []);
 
   const loading = jobs === null && !error;
+
+  // 40 rows per page. Row numbers continue across pages via `startIndex`.
+  const { page, setPage, pageCount, pageItems, startIndex } = usePagination(jobs ?? [], 40);
 
   return (
     <div className="space-y-6">
@@ -89,13 +94,13 @@ export function RejectedPage() {
             )}
 
             {!loading &&
-              jobs?.map((job, i) => {
+              pageItems.map((job, i) => {
                 // Strip the leading "reject — " prefix the triage agent prepends, if present.
                 const reason = job.triage_reason?.replace(/^reject\s*[—-]\s*/i, "") ?? "—";
                 return (
                   <TableRow key={job.id}>
                     <TableCell className="text-right text-muted-foreground tabular-nums">
-                      {i + 1}
+                      {startIndex + i + 1}
                     </TableCell>
                     <TableCell>{job.company}</TableCell>
                     <TableCell className="font-medium">
@@ -115,6 +120,8 @@ export function RejectedPage() {
           </TableBody>
         </Table>
       </div>
+
+      <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
 
       <JobDetailDialog jobId={viewId} onOpenChange={(open) => !open && setViewId(null)} />
     </div>

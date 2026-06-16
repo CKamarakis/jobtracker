@@ -36,6 +36,12 @@ export function JobDetailDialog({
 function JobDetailDialogBody({ id }: { id: string }) {
   const { data: job, loading, error } = useJob(id);
 
+  // Strip the leading "<verdict> — " prefix the triage agent prepends, if present.
+  const triageReason = job?.triage_reason?.replace(
+    /^(strong fit|fit|stretch|reject)\s*[—-]\s*/i,
+    "",
+  );
+
   return (
     <div className="space-y-6 p-6">
       {loading && (
@@ -75,7 +81,7 @@ function JobDetailDialogBody({ id }: { id: string }) {
               )}
             </div>
 
-            <div className="flex gap-4 text-sm">
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
               {job.url && (
                 <a className="text-primary hover:underline" href={job.url} target="_blank" rel="noreferrer">
                   Job ad ↗
@@ -85,6 +91,14 @@ function JobDetailDialogBody({ id }: { id: string }) {
                 <a className="text-primary hover:underline" href={job.ats_url} target="_blank" rel="noreferrer">
                   ATS page ↗
                 </a>
+              )}
+              {triageReason && (
+                <span className="text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    {job.triage_verdict === "reject" ? "Why rejected:" : "Triage note:"}
+                  </span>{" "}
+                  {triageReason}
+                </span>
               )}
             </div>
           </DialogHeader>
