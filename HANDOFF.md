@@ -1,4 +1,4 @@
-# HANDOFF — 2026-06-15 (Dashboard app started; backend fetch+triage seam DONE; next = Step 3 dashboard UI)
+# HANDOFF — 2026-06-16 (Dashboard + post-fetch results review screen SHIPPED; next = persist the review actions)
 
 Transient note for the next session. **Authoritative living doc + full rationale:**
 `C:\Users\Chris\.claude\plans\ok-this-is-the-generic-gizmo.md` (the plan file — read it first).
@@ -34,26 +34,53 @@ which is now built and proven.
   tool → "Reached maximum number of turns" on ~half the batches. Fix in place: `allowed_tools=[]`
   + an override banner ("files inlined, do not use tools") + `max_turns=2`.
 
-## DO THIS NEXT — Step 3: dashboard UI (`web/`)
-Build against the endpoints above. Spec (Chris's): time-of-day greeting; **"Go fetch"** CTA →
-shadcn `Dialog` with **sources multiselect** (from `GET /sources`) + **duration single-select**
-(1 day / 3 days / 1 week) → `POST /fetch` → poll `GET /fetch/status` (ingest→triage→done) → on
-done route to the list. Hero "applications" table = **empty state** for now (no apply flow yet).
-Nav links to `/applications` + `/saved` (stub pages) and `/search` (reuse current list page).
-- New `DashboardPage` at `/`; move current `JobListPage` to `/search`; keep `/jobs/:id`.
-- `web/src/api/client.ts` is GET-only — add a POST helper + the `/fetch`, `/fetch/status`,
-  `/sources` calls. Reuse the `useAsync` hook. No speculative list filters yet (build on felt need).
+## DONE & SHIPPED this session (Step 3 — dashboard UI + post-fetch review screen)
+Built screen-by-screen with Chris steering. The arc: dashboard → "Go fetch" → a dedicated
+results-review table, with the async-run wait done **right** (one long-poll, no client polling).
+
+- **Client layer** (`web/src/api/`): `request` generalised to take a `RequestInit`; added a
+  `post<T>` helper + `listSources` / `triggerFetch` / `getFetchStatus` / `waitForFetch`. New
+  `FetchStatus` / `FetchRequest` types mirror the Pydantic contract (verified vs live payload).
+- **`DashboardPage`** (`/`): time-of-day greeting; **Go fetch** CTA → `GoFetchDialog`; empty-state
+  applications table; reads `/fetch/status` once on load for a status line.
+- **`GoFetchDialog`**: sources multiselect (`null` = "all", avoids seeding state via effect) +
+  duration single-select → `POST /fetch` → navigates to `/results`.
+- **`ResultsPage`** (`/results`): the post-fetch review queue, Chris's 7 columns:
+  `# / Company / Title(ext-link new tab) / View(→/jobs/:id) / Notes / Remove / Approve`.
+  Mount flow: read status → **if running, await `/fetch/wait`** (shows a spinner) → load pool.
+  **Notes / Remove / Approve are LOCAL-ONLY (ephemeral) for now** — UX proven, no persistence.
+- **`ui/dialog.tsx`**: new shadcn-style wrapper over **Base UI** Dialog (this kit is Base UI, not
+  Radix → `render` props, not `asChild`). `Layout` got a nav bar; `/search` = old list page;
+  `/applications` + `/saved` = `StubPage`.
+
+### The long-poll (how "results appear when the run finishes" works — no heartbeat)
+- `fetch_runner` has a `threading.Event` `_idle`: **set** when nothing runs, **cleared** in
+  `start()`, **set again** in `_run`'s `finally` (fires on success *or* error).
+- `GET /fetch/wait` → `_idle.wait(90)`: one HTTP request the server holds open until the run ends
+  (90s cap bounds the hang; a timeout mid-run just means the client calls again). Returns instantly
+  when idle (verified 39ms). This replaced an earlier 1.5s status-poll Chris (rightly) rejected.
+- **Caveat:** a blocking sync endpoint holds one FastAPI threadpool thread (default 40) for ≤90s.
+  Fine for single-user local; at scale use async + `asyncio.Event` or SSE/WebSocket push.
+
+## DO THIS NEXT — persist the review actions (write endpoints)
+The results screen is UX-complete but its three actions don't survive a reload. Wire them to the
+backend (Chris deferred the semantics; confirm before building):
+- **Approve** → likely `status='shortlisted'`; **Remove** → `status='skipped'` (soft, keeps the
+  record) vs hard delete; **Notes** → a `notes` field on the job record + a write path.
+- Needs the **first WRITE-to-data endpoints** (e.g. `PATCH /jobs/{id}`). The data seam
+  (`api/data_source.py`) is read-only today — extend it to write back to `data/jobs.jsonl`.
+- Then the dashboard **Applications** table (currently empty-state) can show approved jobs, and
+  the results view can default to **hiding rejects** (pool is ~87 reject / few fit — flat 139 is noisy).
 
 ## State / housekeeping
-- **Server:** a uvicorn from this session may still be running on :8000 — restart fresh.
-  Run: `$env:PYTHONUTF8=1; & "<py>" -m uvicorn api.main:app --port 8000`. If a stale server
-  serves old code (e.g. a route 404s but `/health` works), kill the PID on :8000 first.
-- **`data/jobs.jsonl` = 139 freshly fetched+triaged jobs** (the old 193 pool is backed up at
+- **Server:** a uvicorn may still be running on :8000 — restart fresh. Run:
+  `$env:PYTHONUTF8=1; & "<py>" -m uvicorn api.main:app --port 8000`. If a stale server serves old
+  code (a NEW route 404s but `/health` works), kill the PID on :8000 first (PowerShell:
+  `Get-NetTCPConnection -LocalPort 8000 -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }`).
+- **`data/jobs.jsonl` = 139 fetched+triaged jobs** (old 193 pool backed up at
   `data/jobs.backup-pre-fetch-seam.jsonl`). `data/triage_cache.json` has 88 entries.
-- **Branch FLAG:** all backend work is **uncommitted on `phase-c-react-frontend`** (which also
-  has open **PR #6** for the older frontend). Decide branching/commit before stacking Step 3.
 - **Deps added:** `claude-agent-sdk` (bundles its own Claude Code CLI; auth = Chris's existing
-  Claude login, verified working headless).
+  Claude login, verified headless).
 
 ## Env (unchanged)
 - Python: `C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe` (full path; UTF-8).

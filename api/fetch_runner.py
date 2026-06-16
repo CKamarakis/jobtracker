@@ -30,6 +30,11 @@ sys.path.insert(0, str(REPO_ROOT / "ingest"))
 import run as ingest_run  # noqa: E402  (path-dependent import, intentional)
 
 _lock = threading.Lock()
+# Set whenever no run is in flight (idle/done/error). The long-poll endpoint waits on
+# this instead of polling: one blocked request that returns the moment the run finishes.
+# Starts set because the process boots with no live run.
+_idle = threading.Event()
+_idle.set()
 _state: dict = {
     "state": "idle",        # idle | running | done | error
     "phase": None,          # fetch | write | triage | done | error
@@ -93,6 +98,8 @@ def _run(sources: list[str] | None, duration: str) -> None:
              counts=summary, finished_at=_now(), error=None)
     except Exception as e:  # noqa: BLE001 — surface any run failure as error status
         _set(state="error", phase="error", message=str(e), error=str(e), finished_at=_now())
+    finally:
+        _idle.set()  # wake any /fetch/wait callers, whether we finished or errored
 
 
 def available_sources() -> list[str]:
@@ -102,6 +109,14 @@ def available_sources() -> list[str]:
 def get_status() -> dict:
     with _lock:
         return dict(_state)
+
+
+def wait(timeout: float) -> dict:
+    """Block until the current run finishes (or `timeout` elapses), then return the
+    status. If no run is in flight this returns immediately. The timeout caps how long
+    one HTTP request hangs — a caller that times out mid-run just calls again."""
+    _idle.wait(timeout)
+    return get_status()
 
 
 def start(sources: list[str] | None, duration: str) -> dict:
@@ -115,6 +130,7 @@ def start(sources: list[str] | None, duration: str) -> dict:
         )
         _write_status()
         snapshot = dict(_state)
+    _idle.clear()  # a run is now in flight; /fetch/wait callers will block until _run sets it
     threading.Thread(target=_run, args=(sources, duration), daemon=True).start()
     return snapshot
 
