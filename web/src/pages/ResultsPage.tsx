@@ -4,7 +4,6 @@ import {
   CheckIcon,
   ChevronRightIcon,
   ExternalLinkIcon,
-  EyeIcon,
   Loader2Icon,
   StickyNoteIcon,
   Trash2Icon,
@@ -12,6 +11,7 @@ import {
 import { getFetchStatus, listJobs, waitForFetch } from "@/api/client";
 import type { JobSummary } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { JobDetailDialog } from "@/components/JobDetailDialog";
 import {
   Dialog,
   DialogContent,
@@ -79,6 +79,8 @@ export function ResultsPage() {
   const [approved, setApproved] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [notesFor, setNotesFor] = useState<string | null>(null);
+  // Which job's full info is open in the detail modal (null = closed).
+  const [viewId, setViewId] = useState<string | null>(null);
 
   // The review queue is only what PASSED triage (strong fit / fit / stretch). Triage
   // rejects are split off to their own page (linked via the CTA below); title-prefiltered
@@ -153,23 +155,22 @@ export function ResultsPage() {
       )}
 
       <div className="rounded-lg border">
-        <Table>
+        {/* Cells wrap (whitespace-normal + align-top) so long company/title text fits
+            the container width instead of forcing a horizontal scroll. */}
+        <Table className="[&_td]:whitespace-normal [&_td]:align-top">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10 text-right">#</TableHead>
-              <TableHead>Company</TableHead>
+              <TableHead className="w-[28%]">Company</TableHead>
               <TableHead>Title</TableHead>
-              <TableHead className="w-12 text-center">View</TableHead>
-              <TableHead className="w-12 text-center">Notes</TableHead>
-              <TableHead className="w-12 text-center">Remove</TableHead>
-              <TableHead className="w-12 text-center">Approve</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading &&
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 4 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-5 w-full" />
                     </TableCell>
@@ -179,7 +180,7 @@ export function ResultsPage() {
 
             {!loading && visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={4} className="py-12 text-center text-muted-foreground">
                   {rejectedCount > 0
                     ? "Nothing passed triage this run — the rejected jobs are linked above."
                     : "Nothing to review. Run a fetch from the dashboard to pull fresh jobs."}
@@ -199,54 +200,57 @@ export function ResultsPage() {
                     </TableCell>
                     <TableCell>{job.company}</TableCell>
                     <TableCell className="font-medium">
-                      {adUrl ? (
-                        <a
-                          href={adUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 hover:underline"
+                      {/* Clicking the title opens the full-info modal (same as the eye
+                          action did before). The external-ad link moved to its own icon. */}
+                      <button
+                        type="button"
+                        onClick={() => setViewId(job.id)}
+                        className="text-left hover:underline"
+                      >
+                        {job.title}
+                      </button>
+                    </TableCell>
+                    {/* All four row actions live in one column; nowrap keeps them on a
+                        single line while the Company/Title cells above are free to wrap. */}
+                    <TableCell className="whitespace-nowrap align-middle text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {adUrl && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title="Open job ad in a new tab"
+                            render={
+                              <a href={adUrl} target="_blank" rel="noopener noreferrer" />
+                            }
+                          >
+                            <ExternalLinkIcon />
+                          </Button>
+                        )}
+                        <Button
+                          variant={hasNote ? "secondary" : "ghost"}
+                          size="icon-sm"
+                          title={hasNote ? "Edit note" : "Add note"}
+                          onClick={() => setNotesFor(job.id)}
                         >
-                          {job.title}
-                          <ExternalLinkIcon className="size-3.5 text-muted-foreground" />
-                        </a>
-                      ) : (
-                        job.title
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button variant="ghost" size="icon-sm" title="View all info" render={<Link to={`/jobs/${job.id}`} />}>
-                        <EyeIcon />
-                      </Button>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        variant={hasNote ? "secondary" : "ghost"}
-                        size="icon-sm"
-                        title={hasNote ? "Edit note" : "Add note"}
-                        onClick={() => setNotesFor(job.id)}
-                      >
-                        <StickyNoteIcon />
-                      </Button>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        title="Remove from review"
-                        onClick={() => remove(job.id)}
-                      >
-                        <Trash2Icon />
-                      </Button>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        variant={isApproved ? "default" : "ghost"}
-                        size="icon-sm"
-                        title={isApproved ? "Approved — click to undo" : "Approve"}
-                        onClick={() => toggleApprove(job.id)}
-                      >
-                        <CheckIcon />
-                      </Button>
+                          <StickyNoteIcon />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          title="Remove from review"
+                          onClick={() => remove(job.id)}
+                        >
+                          <Trash2Icon />
+                        </Button>
+                        <Button
+                          variant={isApproved ? "default" : "ghost"}
+                          size="icon-sm"
+                          title={isApproved ? "Approved — click to undo" : "Approve"}
+                          onClick={() => toggleApprove(job.id)}
+                        >
+                          <CheckIcon />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -266,6 +270,10 @@ export function ResultsPage() {
           setNotesFor(null);
         }}
       />
+
+      {/* The View action opens the shared detail modal (same one RejectedPage uses);
+          it shows the full ad plus the triage verdict + reasoning. */}
+      <JobDetailDialog jobId={viewId} onOpenChange={(open) => !open && setViewId(null)} />
     </div>
   );
 }
