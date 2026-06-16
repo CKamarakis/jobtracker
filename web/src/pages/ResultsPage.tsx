@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   CheckIcon,
+  ChevronRightIcon,
   ExternalLinkIcon,
   EyeIcon,
   Loader2Icon,
@@ -79,9 +80,20 @@ export function ResultsPage() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [notesFor, setNotesFor] = useState<string | null>(null);
 
+  // The review queue is only what PASSED triage (strong fit / fit / stretch). Triage
+  // rejects are split off to their own page (linked via the CTA below); title-prefiltered
+  // jobs never reach the UI. `rejectedCount` drives that CTA.
+  const passed = useMemo(
+    () => (jobs ?? []).filter((j) => j.triage_verdict != null && j.triage_verdict !== "reject"),
+    [jobs],
+  );
+  const rejectedCount = useMemo(
+    () => (jobs ?? []).filter((j) => j.triage_verdict === "reject").length,
+    [jobs],
+  );
   const visible = useMemo(
-    () => (jobs ?? []).filter((j) => !removed.has(j.id)),
-    [jobs, removed],
+    () => passed.filter((j) => !removed.has(j.id)),
+    [passed, removed],
   );
 
   function remove(id: string) {
@@ -100,11 +112,11 @@ export function ResultsPage() {
   // there's no stale table to show, so we don't render one.
   if (fetching) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
-        <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
-        <div>
-          <p className="text-sm font-medium">Fetching and triaging…</p>
-          <p className="text-sm text-muted-foreground">This takes around a minute. Hang tight.</p>
+      <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 text-center md:gap-6">
+        <Loader2Icon className="size-6 animate-spin text-muted-foreground md:size-12" />
+        <div className="space-y-1 md:space-y-2">
+          <p className="text-sm font-medium md:text-lg">Fetching and triaging…</p>
+          <p className="text-sm text-muted-foreground md:text-base">This takes around a minute. Hang tight.</p>
         </div>
       </div>
     );
@@ -125,6 +137,19 @@ export function ResultsPage() {
         <p className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {error.message}
         </p>
+      )}
+
+      {rejectedCount > 0 && (
+        <Link
+          to="/results/rejected"
+          className="flex items-center justify-between rounded-lg border border-dashed px-4 py-3 text-sm transition-colors hover:bg-muted/50"
+        >
+          <span className="text-muted-foreground">
+            <span className="font-medium text-foreground">{rejectedCount}</span> rejected by triage today —{" "}
+            take a look
+          </span>
+          <ChevronRightIcon className="size-4 text-muted-foreground" />
+        </Link>
       )}
 
       <div className="rounded-lg border">
@@ -155,7 +180,9 @@ export function ResultsPage() {
             {!loading && visible.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                  Nothing to review. Run a fetch from the dashboard to pull fresh jobs.
+                  {rejectedCount > 0
+                    ? "Nothing passed triage this run — the rejected jobs are linked above."
+                    : "Nothing to review. Run a fetch from the dashboard to pull fresh jobs."}
                 </TableCell>
               </TableRow>
             )}

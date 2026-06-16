@@ -40,7 +40,7 @@ import store  # noqa: E402  (path-dependent import, intentional)
 # only sent on the detail endpoint — list payloads stay small for the React table.
 SUMMARY_FIELDS = (
     "id", "source", "company", "title", "location", "remote",
-    "url", "ats_url", "posted_date", "status", "triage_verdict",
+    "url", "ats_url", "posted_date", "status", "triage_verdict", "triage_reason",
 )
 
 

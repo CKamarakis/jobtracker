@@ -4,6 +4,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { JobListPage } from "@/pages/JobListPage";
 import { JobDetailPage } from "@/pages/JobDetailPage";
 import { ResultsPage } from "@/pages/ResultsPage";
+import { RejectedPage } from "@/pages/RejectedPage";
 import { StubPage } from "@/pages/StubPage";
 
 // Route table. The parent <Layout> route renders the header + <Outlet>; the nested
@@ -21,6 +22,7 @@ export default function App() {
         <Route index element={<DashboardPage />} />
         <Route path="search" element={<JobListPage />} />
         <Route path="results" element={<ResultsPage />} />
+        <Route path="results/rejected" element={<RejectedPage />} />
         <Route path="jobs/:id" element={<JobDetailPage />} />
         <Route path="applications" element={<StubPage title="Applications" />} />
         <Route path="saved" element={<StubPage title="Saved" />} />
