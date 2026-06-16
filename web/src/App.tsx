@@ -12,6 +12,8 @@ import { StubPage } from "@/pages/StubPage";
 //   /              → DashboardPage  (home: greeting + Go-fetch + applications)
 //   /search        → JobListPage    (browse/filter the triaged pool)
 //   /jobs/:id      → JobDetailPage  (":id" is read via useParams in the page)
+//   /results       → ResultsPage   (post-fetch review: triage-approved jobs)
+//   /rejected-ads  → RejectedPage  (read-only: jobs triage rejected this run)
 //   /applications  → stub (apply flow not built yet)
 //   /saved         → stub (shortlist view not built yet)
 //   *              → simple not-found
@@ -22,7 +24,7 @@ export default function App() {
         <Route index element={<DashboardPage />} />
         <Route path="search" element={<JobListPage />} />
         <Route path="results" element={<ResultsPage />} />
-        <Route path="results/rejected" element={<RejectedPage />} />
+        <Route path="rejected-ads" element={<RejectedPage />} />
         <Route path="jobs/:id" element={<JobDetailPage />} />
         <Route path="applications" element={<StubPage title="Applications" />} />
         <Route path="saved" element={<StubPage title="Saved" />} />
