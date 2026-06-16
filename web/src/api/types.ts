@@ -24,6 +24,7 @@ export interface JobSummary {
   posted_date: string | null;
   status: Status | null;
   triage_verdict: Verdict | null;
+  triage_reason: string | null;
 }
 
 /** Detail-view shape — mirrors JobDetail (JobSummary + body & triage trail). */

@@ -29,6 +29,7 @@ class JobSummary(BaseModel):
     posted_date: str | None = None
     status: str | None = None
     triage_verdict: str | None = None
+    triage_reason: str | None = None  # one-line rationale; surfaced on the rejects list
 
     @classmethod
     def from_record(cls, rec: dict) -> "JobSummary":

@@ -19,14 +19,6 @@ import { GoFetchDialog } from "@/components/GoFetchDialog";
 // ingest+triage run, and (2) an "applications" table that's an empty state for now —
 // there's no apply flow yet, so this is a placeholder the apply pipeline will fill.
 
-/** Greeting keyed to the local time of day. Pure presentation, no i18n yet. */
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
-}
-
 export function DashboardPage() {
   const navigate = useNavigate();
   const [fetchOpen, setFetchOpen] = useState(false);
@@ -38,7 +30,7 @@ export function DashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{greeting()}.</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Bonjour, Sunshine! Naa?</h1>
           <p className="text-sm text-muted-foreground">
             Pull a fresh batch of roles, or pick up where you left off.
           </p>
