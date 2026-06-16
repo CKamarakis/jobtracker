@@ -92,15 +92,16 @@ function JobDetailDialogBody({ id }: { id: string }) {
                   ATS page ↗
                 </a>
               )}
-              {triageReason && (
-                <span className="text-muted-foreground">
-                  <span className="font-medium text-foreground">
-                    {job.triage_verdict === "reject" ? "Why rejected:" : "Triage note:"}
-                  </span>{" "}
-                  {triageReason}
-                </span>
-              )}
             </div>
+
+            {triageReason && (
+              <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                <span className="font-medium text-foreground">
+                  {job.triage_verdict === "reject" ? "Why rejected:" : "Triage reasoning:"}
+                </span>{" "}
+                <span className="text-muted-foreground">{triageReason}</span>
+              </div>
+            )}
           </DialogHeader>
 
           <Separator />
