@@ -112,6 +112,16 @@ soft drag, not a hard filter — see factor 10 in `profile/parameters.md`.)
 > - Exact locations (already on integrated-terminal PATH via `.vscode/settings.json`):
 >   `C:\Program Files\GitHub CLI\gh.exe` · `C:\Program Files\Git\cmd\git.exe`.
 
+> **NODE / NPM PATHS — SAME RULE.** Same stale-PATH gotcha hits `node`/`npm`/`npx`
+> (and `npm.cmd` shells out to `node`, so finding npm isn't enough — node's dir must
+> be on PATH too). Don't probe with `where`/`Get-Command`/Glob. Node lives at
+> `C:\Program Files\nodejs` (now on the integrated-terminal PATH via `.vscode/settings.json`).
+> If a fresh shell still can't find it, prepend it inline:
+> ```powershell
+> $env:PATH = "C:\Program Files\nodejs;$env:PATH"; & "C:\Program Files\nodejs\npm.cmd" run dev
+> ```
+> Frontend dev server: `cd web; npm run dev` → Vite on http://localhost:5173.
+
 - `python ingest/run.py` — fetch + enrich + dedup → `data/jobs.jsonl` (daily).
 - Ask Claude: *"triage the new jobs"* → invokes the triage subagent.
 - `python evals/run_eval.py` — score triage against the gold set.
