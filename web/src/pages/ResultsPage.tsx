@@ -141,11 +141,11 @@ export function ResultsPage() {
 
       {rejectedCount > 0 && (
         <Link
-          to="/results/rejected"
+          to="/rejected-ads"
           className="flex items-center justify-between rounded-lg border border-dashed px-4 py-3 text-sm transition-colors hover:bg-muted/50"
         >
           <span className="text-muted-foreground">
-            <span className="font-medium text-foreground">{rejectedCount}</span> rejected by triage today —{" "}
+            <span className="font-medium text-foreground">{rejectedCount}</span> rejected ads today —{" "}
             take a look
           </span>
           <ChevronRightIcon className="size-4 text-muted-foreground" />

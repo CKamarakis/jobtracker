@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { SearchIcon, SparklesIcon } from "lucide-react";
+import { CircleCheckIcon, CircleXIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import { getFetchStatus } from "@/api/client";
 import type { FetchStatus } from "@/api/types";
 import { useAsync } from "@/hooks/useAsync";
@@ -36,15 +36,30 @@ export function DashboardPage() {
           </p>
           <FetchStatusLine status={status} />
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" render={<Link to="/search" />}>
-            <SearchIcon />
-            Browse jobs
-          </Button>
-          <Button onClick={() => setFetchOpen(true)} disabled={status?.state === "running"}>
+        <div className="flex flex-col items-end gap-2">
+          <Button
+            size="lg"
+            className="px-6 text-base"
+            onClick={() => setFetchOpen(true)}
+            disabled={status?.state === "running"}
+          >
             <SparklesIcon />
             {status?.state === "running" ? "Fetching…" : "Go fetch"}
           </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" render={<Link to="/search" />}>
+              <SearchIcon />
+              Browse jobs
+            </Button>
+            <Button variant="outline" render={<Link to="/results" />}>
+              <CircleCheckIcon />
+              Review approved
+            </Button>
+            <Button variant="outline" render={<Link to="/rejected-ads" />}>
+              <CircleXIcon />
+              Rejected ads
+            </Button>
+          </div>
         </div>
       </div>
 

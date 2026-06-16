@@ -24,7 +24,7 @@ export function Layout() {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-6 px-6 py-4">
           <div className="flex items-center gap-6">
             <Link to="/" className="text-lg font-semibold tracking-tight">
-              JobHunt
+              JobHunter
             </Link>
             <nav className="flex items-center gap-1 text-sm">
               {NAV.map(({ to, label, end }) => (

@@ -1,88 +1,74 @@
-# HANDOFF — 2026-06-16 (Dashboard + post-fetch results review screen SHIPPED; next = persist the review actions)
+# HANDOFF — 2026-06-16 (PR #10 merged: title pre-filter hardened + rejected-jobs view; next = persist review actions OR eval backstop)
 
 Transient note for the next session. **Authoritative living doc + full rationale:**
 `C:\Users\Chris\.claude\plans\ok-this-is-the-generic-gizmo.md` (the plan file — read it first).
-Persisted memory: `project_state_2026-06-15.md`, `project_triage_llm_seam.md`.
-
-## What changed direction
-We started building the **job-tracker app proper**, screen-by-screen, from Chris's 10 user
-stories. Chris steers the pace and challenges decisions. This **supersedes** the old
-"Phase D Postgres next" framing in prior handoffs. First screen = the **dashboard**, and its
-"Go fetch" button forced the long-deferred "app triggers an AI action through the API" seam —
-which is now built and proven.
-
-## DONE & PROVEN this session (backend seam — Steps 1 & 2 of the plan)
-- **Ephemeral pool:** `ingest/run.py` → `run_ingest(sources, duration)` **wipes & replaces**
-  `data/jobs.jsonl` each run (scratch, not an accumulator). Source registry + duration→window
-  mapping. `ingest/adzuna.py` got a `max_days_old` param.
-- **Async fetch endpoint:** `api/main.py` → `POST /fetch` (runs in a daemon thread via
-  `api/fetch_runner.py`), `GET /fetch/status` (poll: idle|running|done|error + phase + counts,
-  mirrored to `data/run_status.json`), `GET /sources`.
-- **Triage stage:** `api/triage_runner.py` — scores new jobs via **`claude-agent-sdk` against
-  Chris's existing Claude subscription (~$0 marginal)**. Prompt = the real
-  `.claude/agents/triage.md` body + `profile/*.md` inlined (single source of truth on disk).
-  Pluggable provider boundary (`_score_batch_claude_sdk`) for a later local-Ollama/API swap.
-- **Seen-guard:** `data/triage_cache.json` (job id → verdict). Wiped+refetched repeats hydrate
-  free; only new ads hit the LLM. **Proven:** a server refetch hydrated 88/100 from cache,
-  scored only 12 new, 0 failed. Verdicts are sound (87 reject / 1 fit / 37 prefiltered).
-
-### Gotchas baked in (Windows + claude-agent-sdk) — don't reintroduce
-- `system_prompt` is passed as a **CLI arg** → Windows ~32k cmdline cap (`WinError 206`, which
-  the SDK mis-reports as "CLI not found"). Big content rides the **user message (stdin)**; only
-  a short `SYSTEM_ROLE` goes in `system_prompt`.
-- `max_turns=1` + an inlined "Read these first" instruction made the model attempt the Read
-  tool → "Reached maximum number of turns" on ~half the batches. Fix in place: `allowed_tools=[]`
-  + an override banner ("files inlined, do not use tools") + `max_turns=2`.
-
-## DONE & SHIPPED this session (Step 3 — dashboard UI + post-fetch review screen)
-Built screen-by-screen with Chris steering. The arc: dashboard → "Go fetch" → a dedicated
-results-review table, with the async-run wait done **right** (one long-poll, no client polling).
-
-- **Client layer** (`web/src/api/`): `request` generalised to take a `RequestInit`; added a
-  `post<T>` helper + `listSources` / `triggerFetch` / `getFetchStatus` / `waitForFetch`. New
-  `FetchStatus` / `FetchRequest` types mirror the Pydantic contract (verified vs live payload).
-- **`DashboardPage`** (`/`): time-of-day greeting; **Go fetch** CTA → `GoFetchDialog`; empty-state
-  applications table; reads `/fetch/status` once on load for a status line.
-- **`GoFetchDialog`**: sources multiselect (`null` = "all", avoids seeding state via effect) +
-  duration single-select → `POST /fetch` → navigates to `/results`.
-- **`ResultsPage`** (`/results`): the post-fetch review queue, Chris's 7 columns:
-  `# / Company / Title(ext-link new tab) / View(→/jobs/:id) / Notes / Remove / Approve`.
-  Mount flow: read status → **if running, await `/fetch/wait`** (shows a spinner) → load pool.
-  **Notes / Remove / Approve are LOCAL-ONLY (ephemeral) for now** — UX proven, no persistence.
-- **`ui/dialog.tsx`**: new shadcn-style wrapper over **Base UI** Dialog (this kit is Base UI, not
-  Radix → `render` props, not `asChild`). `Layout` got a nav bar; `/search` = old list page;
-  `/applications` + `/saved` = `StubPage`.
-
-### The long-poll (how "results appear when the run finishes" works — no heartbeat)
-- `fetch_runner` has a `threading.Event` `_idle`: **set** when nothing runs, **cleared** in
-  `start()`, **set again** in `_run`'s `finally` (fires on success *or* error).
-- `GET /fetch/wait` → `_idle.wait(90)`: one HTTP request the server holds open until the run ends
-  (90s cap bounds the hang; a timeout mid-run just means the client calls again). Returns instantly
-  when idle (verified 39ms). This replaced an earlier 1.5s status-poll Chris (rightly) rejected.
-- **Caveat:** a blocking sync endpoint holds one FastAPI threadpool thread (default 40) for ≤90s.
-  Fine for single-user local; at scale use async + `asyncio.Event` or SSE/WebSocket push.
-
-## DO THIS NEXT — persist the review actions (write endpoints)
-The results screen is UX-complete but its three actions don't survive a reload. Wire them to the
-backend (Chris deferred the semantics; confirm before building):
-- **Approve** → likely `status='shortlisted'`; **Remove** → `status='skipped'` (soft, keeps the
-  record) vs hard delete; **Notes** → a `notes` field on the job record + a write path.
-- Needs the **first WRITE-to-data endpoints** (e.g. `PATCH /jobs/{id}`). The data seam
-  (`api/data_source.py`) is read-only today — extend it to write back to `data/jobs.jsonl`.
-- Then the dashboard **Applications** table (currently empty-state) can show approved jobs, and
-  the results view can default to **hiding rejects** (pool is ~87 reject / few fit — flat 139 is noisy).
+Persisted memory: `project_state_2026-06-16.md` (Step 3 UI) and `project_dedup_prefilter.md`.
 
 ## State / housekeeping
-- **Server:** a uvicorn may still be running on :8000 — restart fresh. Run:
-  `$env:PYTHONUTF8=1; & "<py>" -m uvicorn api.main:app --port 8000`. If a stale server serves old
-  code (a NEW route 404s but `/health` works), kill the PID on :8000 first (PowerShell:
-  `Get-NetTCPConnection -LocalPort 8000 -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }`).
-- **`data/jobs.jsonl` = 139 fetched+triaged jobs** (old 193 pool backed up at
-  `data/jobs.backup-pre-fetch-seam.jsonl`). `data/triage_cache.json` has 88 entries.
-- **Deps added:** `claude-agent-sdk` (bundles its own Claude Code CLI; auth = Chris's existing
-  Claude login, verified headless).
+- **On `main` @ `47764e1`**, current with origin. PRs #8 #9 #10 all merged. No open branches.
+- **Servers may still be running** from this session: uvicorn on :8000, Vite on :5173.
+  Restart fresh if stale. Backend:
+  `$env:PYTHONUTF8=1; & "<py>" -m uvicorn api.main:app --port 8000`.
+  If a NEW route/field 404s/empties but `/health` works → stale server serving old code; kill PID:
+  `Get-NetTCPConnection -LocalPort 8000 -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }`.
+- **`data/jobs.jsonl` is the LAST run's pool** (227 fetched; 21 passed triage / 157 reject /
+  49 title-prefiltered-skipped). These verdicts predate the new filter — a fresh "Go fetch"
+  rebuilds the pool and far fewer jobs will reach triage.
+
+## DONE & MERGED this session (PR #10)
+Two threads, one PR.
+
+### 1. Title pre-filter hardening (`ingest/filters.py`) — the big one
+The `\b`-bounded denylist was leaking obvious non-fits to the **paid LLM triage** stage.
+- **Split into TWO regexes** because German compounds defeat `\b`:
+  - `_TITLE_DENY_STEM` — **substring** (no boundaries). For compounding/inflecting German
+    stems where `\b` silently fails: `\bpraktikum\b` never matched `Pflichtpraktikum`;
+    `\bcontroller\b` never matched `Vertriebscontroller`; `\bgrafik\b` never matched
+    `Grafikdesign`; the pre-existing `buchhalt` was a **dead rule** (never matched
+    `Buchhalter`). This was a latent bug, not just a gap.
+  - `_TITLE_DENY_WORD` — **`\b`-bounded**, for real English/short words that WOULD
+    over-match as substrings (e.g. `qa`). Key trick: **`engineers?` not `engineering`** —
+    cuts IC "Software/Staff/Laravel Engineer" but lets a coupled
+    "Head of Product & Engineering" (a real strong fit) through to triage.
+- **Added the leaking families:** eng/IT IC, finance/controlling, project/claim/quality
+  mgmt, marketing/SEO, data scientist/analyst, consultant/berater, sales/bizdev, people/HR,
+  trades/field-service, safety/environment, retail/callcenter, property mgmt.
+- **Validated rigorously** (the disciplined loop — do this for any future denylist change):
+  ran the new filter against **all 18 `evals/labeled/*.md` gold titles** AND the live
+  227-pool. Result: **178 → 57 jobs reach the LLM**, **0 gold regressions, 0 of the 21
+  keepers cut.** Deliberately dropped bare `growth` (a Growth PM is still a PM → recall).
+- **The floor:** what still passes is mostly genuine "Product Manager/Owner" titles that
+  only the BODY disqualifies (German-C1, wrong domain). Titles can't cut those without
+  eating the target family — that's triage's job. ~57 is about the responsible floor.
+
+### 2. Rejected-jobs view (frontend + thin API touch)
+- Post-fetch `/results` now shows **ONLY what passed triage** (strong fit/fit/stretch).
+- New **read-only `/results/rejected`** page (`web/src/pages/RejectedPage.tsx`), reached via
+  a dashed CTA above the results table. Shows **triage rejects only** (title-prefiltered
+  jobs are excluded — Chris's call), columns: #/Company/Title(ext)/Why-rejected/View.
+- Surfaced `triage_reason` end-to-end. **GOTCHA:** `api/data_source.py` has a
+  `SUMMARY_FIELDS` whitelist that projects records BEFORE the Pydantic model — adding the
+  field to `models.py` alone wasn't enough; it must also be in `SUMMARY_FIELDS`.
+
+### 3. Small UI fixes
+- Logo `Job-Hunt` → `JobHunt`; dashboard greeting copy; fetch spinner centered (`min-h-[70vh]`)
+  + 2× on desktop (`md:` variants).
+
+## DO THIS NEXT — pick one (both still open, unchanged by this session)
+1. **Persist the review actions** (the bigger deferred item). Results-page Approve/Remove/Notes
+   are still LOCAL-ONLY/ephemeral. Needs the **first WRITE-to-data endpoints** (e.g.
+   `PATCH /jobs/{id}`); `api/data_source.py` is read-only today — extend it to write back to
+   `data/jobs.jsonl`. Semantics to confirm with Chris first: Approve→`shortlisted`?
+   Remove→`skipped`(soft) vs hard-delete? Notes→new `notes` field? Then the dashboard
+   Applications table can show approved jobs.
+2. **Eval backstop for the new filter** (cheap, repo-aligned). Add 3–4 of the now-cut IC
+   titles (Software Engineer, QA Analyst, Projektmanager, Marketing Manager) as labeled
+   `reject` cases so a future loosening of `filters.py` can't silently regress. NOTE:
+   `evals/labeled.json` is EMPTY (0 bytes) — the real gold set is the 18 `evals/labeled/*.md`
+   files (parse `title:` / `verdict:` from each).
 
 ## Env (unchanged)
 - Python: `C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe` (full path; UTF-8).
 - git → Bash tool. gh → `"/c/Program Files/GitHub CLI/gh.exe"` from Bash tool.
-- Node 24 / npm 11. `web/` = Vite + React 19 + TS + Tailwind v4 + shadcn. `npm run dev` → :5173.
+- Node 24 / npm 11 at `C:\Program Files\nodejs`. `web/` = Vite + React 19 + TS + Tailwind v4 +
+  shadcn-over-Base-UI. `cd web; npm run dev` → :5173. Typecheck: `npx tsc -p web/tsconfig.app.json --noEmit`.

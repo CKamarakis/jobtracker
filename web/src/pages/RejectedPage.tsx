@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeftIcon, ExternalLinkIcon, EyeIcon } from "lucide-react";
+import { ArrowLeftIcon } from "lucide-react";
 import { listJobs } from "@/api/client";
 import type { JobSummary } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { JobDetailDialog } from "@/components/JobDetailDialog";
 import {
   Table,
   TableBody,
@@ -20,6 +21,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 export function RejectedPage() {
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  // Which job's full info is open in the modal (null = closed).
+  const [viewId, setViewId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,21 +57,22 @@ export function RejectedPage() {
       )}
 
       <div className="rounded-lg border">
-        <Table>
+        {/* Cells wrap (whitespace-normal + align-top) so the table fits the container
+            width instead of forcing a horizontal scroll. */}
+        <Table className="[&_td]:whitespace-normal [&_td]:align-top">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10 text-right">#</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Title</TableHead>
+              <TableHead className="w-[22%]">Company</TableHead>
+              <TableHead className="w-[34%]">Title</TableHead>
               <TableHead>Why rejected</TableHead>
-              <TableHead className="w-12 text-center">View</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading &&
               Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 5 }).map((_, j) => (
+                  {Array.from({ length: 4 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-5 w-full" />
                     </TableCell>
@@ -78,7 +82,7 @@ export function RejectedPage() {
 
             {!loading && (jobs?.length ?? 0) === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={4} className="py-12 text-center text-muted-foreground">
                   Nothing was rejected this run.
                 </TableCell>
               </TableRow>
@@ -86,7 +90,6 @@ export function RejectedPage() {
 
             {!loading &&
               jobs?.map((job, i) => {
-                const adUrl = job.url ?? job.ats_url;
                 // Strip the leading "reject — " prefix the triage agent prepends, if present.
                 const reason = job.triage_reason?.replace(/^reject\s*[—-]\s*/i, "") ?? "—";
                 return (
@@ -96,32 +99,24 @@ export function RejectedPage() {
                     </TableCell>
                     <TableCell>{job.company}</TableCell>
                     <TableCell className="font-medium">
-                      {adUrl ? (
-                        <a
-                          href={adUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 hover:underline"
-                        >
-                          {job.title}
-                          <ExternalLinkIcon className="size-3.5 text-muted-foreground" />
-                        </a>
-                      ) : (
-                        job.title
-                      )}
+                      {/* Clicking the title opens the full-info modal. */}
+                      <button
+                        type="button"
+                        onClick={() => setViewId(job.id)}
+                        className="text-left hover:underline"
+                      >
+                        {job.title}
+                      </button>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{reason}</TableCell>
-                    <TableCell className="text-center">
-                      <Button variant="ghost" size="icon-sm" title="View all info" render={<Link to={`/jobs/${job.id}`} />}>
-                        <EyeIcon />
-                      </Button>
-                    </TableCell>
                   </TableRow>
                 );
               })}
           </TableBody>
         </Table>
       </div>
+
+      <JobDetailDialog jobId={viewId} onOpenChange={(open) => !open && setViewId(null)} />
     </div>
   );
 }
