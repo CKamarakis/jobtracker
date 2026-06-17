@@ -48,6 +48,22 @@ teach better. Explanation is not commentary on the work — it IS the work.
 - **The candidate profile lives in `profile/`** and fits in context — no RAG needed now.
   (A future RAG corpus could be built from accumulated dossiers; not in scope yet.)
 
+### Application layers (the pipeline now has a UI on top)
+
+The repo grew from a CLI pipeline into a local app. Build around the working logic; swap
+the backing store later behind a stable seam. (Full phase history in `ROADMAP.md`.)
+- **`api/` — FastAPI over the pipeline artifacts.** Read endpoints for jobs / profile /
+  dossiers / cover-letters; `POST /fetch` + `GET /fetch/wait` (long-poll) trigger an
+  ingest+triage run. App-triggered triage runs via `claude-agent-sdk` on Chris's
+  subscription ($0 marginal). Control script: `api/serve.ps1`; Swagger at `/docs`.
+- **`api/data_source.py` IS the architectural seam.** Everything reads through it.
+  Files are behind it today; **Postgres lands behind it in Phase D** and the React app
+  never notices. Do not bypass it.
+- **`web/` — React + Tailwind v4 + shadcn/ui (not MUI).** Dashboard → Go-fetch dialog →
+  post-fetch review table → job-detail modal → rejected view. Vite dev server on :5173.
+- **Review actions (notes / remove / approve) are LOCAL-ONLY today** — they do not survive
+  a refresh. Phase D (Postgres + first WRITE endpoints, `PATCH /jobs/{id}`) fixes that.
+
 ## Job sources
 - **Arbeitnow** — free, no key. ATS-sourced (Greenhouse, Personio, Workable, Recruitee,
   Lever, Ashby…), strong Berlin / German-market / 50–250-person coverage. Primary source.
@@ -56,9 +72,14 @@ teach better. Explanation is not commentary on the work — it IS the work.
   Pipeline: email lead → web-search `"{title}" {company} careers` → fetch the canonical
   ATS/careers page → full description → then triage normally. Manual paste is the fallback.
 - Apify/LinkedIn paid actor: optional, later.
+- **Active in the pipeline:** Arbeitnow + Adzuna (both registered in `ingest/run.py`'s
+  `SOURCES`). `ingest/jobspy_source.py` exists but is **not** registered yet — wire it into
+  `SOURCES` to enable. Add any new source the same way (register its `fetch()`).
 
 ## Data conventions
-- Storage is **JSONL** (one job per line) + `data/status.json`. No database.
+- Storage **today** is **JSONL** (one job per line) + `data/status.json`, read through
+  `api/data_source.py`. **Phase D swaps this for Postgres behind that same seam** — the
+  record shape and dedup rules below stay; only the store changes.
 - **Dedup key** = stable hash of `lower(company) + normalized(title) + location`.
   Dedup runs **across sources AND across every daily run** — LinkedIn alert emails
   resend the same ads constantly, so before adding any job, check its key against the
@@ -88,44 +109,28 @@ soft drag, not a hard filter — see factor 10 in `profile/parameters.md`.)
   add it to `profile/criteria.md`, re-run. That loop is how triage improves.
 
 ## Commands
-> **PYTHON PATH — DO NOT SEARCH FOR IT. EVER.** `python`/`py` are NOT on the Claude
-> tool PATH (stale-session PATH gotcha). The interpreter is always at this exact path —
-> use it verbatim, never run `where`/`Get-Command`/`Test-Path` to "find" it:
-> ```
-> C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe
-> ```
-> Prefix UTF-8 to avoid cp1252 errors on German text. Canonical invocation:
-> ```powershell
-> $env:PYTHONUTF8=1; & "C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe" <args>
-> ```
-> Or just call `./py.ps1 <args>` from repo root (thin wrapper, same thing).
 
-> **GIT / GH PATHS — SAME RULE, DON'T SEARCH, DON'T RABBIT-HOLE.** Same stale-PATH
-> gotcha hits `git` and `gh`, and they split across shells. Do NOT probe with
-> `where`/`Get-Command`/Glob — use these verbatim:
-> - **`git`** → use the **Bash tool** (git is on its PATH). PowerShell's is unreliable.
-> - **`gh`** → call its full path **from the Bash tool** so it inherits git, e.g.:
->   ```
->   "/c/Program Files/GitHub CLI/gh.exe" pr create --base main --head <branch> --title "…" --body "…"
->   ```
-> - Never run bare `gh` in PowerShell (it can't find git → "unable to find git executable").
-> - Exact locations (already on integrated-terminal PATH via `.vscode/settings.json`):
->   `C:\Program Files\GitHub CLI\gh.exe` · `C:\Program Files\Git\cmd\git.exe`.
+> **TOOLING PATHS — DON'T SEARCH, DON'T RABBIT-HOLE.** `python`/`git`/`gh`/`node`/`npm`
+> are NOT reliably on the Claude tool PATH (stale-session gotcha). Never probe with
+> `where`/`Get-Command`/`Test-Path`/Glob to "find" them — use the verbatim paths below.
+> Full rationale: `docs/ENV.md`.
 
-> **NODE / NPM PATHS — SAME RULE.** Same stale-PATH gotcha hits `node`/`npm`/`npx`
-> (and `npm.cmd` shells out to `node`, so finding npm isn't enough — node's dir must
-> be on PATH too). Don't probe with `where`/`Get-Command`/Glob. Node lives at
-> `C:\Program Files\nodejs` (now on the integrated-terminal PATH via `.vscode/settings.json`).
-> If a fresh shell still can't find it, prepend it inline:
-> ```powershell
-> $env:PATH = "C:\Program Files\nodejs;$env:PATH"; & "C:\Program Files\nodejs\npm.cmd" run dev
-> ```
-> Frontend dev server: `cd web; npm run dev` → Vite on http://localhost:5173.
+| Tool | Use it like this |
+|------|------------------|
+| **python** | `./py.ps1 <args>` from repo root, **or** `$env:PYTHONUTF8=1; & "C:\Users\Chris\AppData\Local\Programs\Python\Python314\python.exe" <args>` (UTF-8 prefix avoids cp1252 errors on German text). |
+| **git** | Run via the **Bash tool** (git is on its PATH there; PowerShell's is unreliable). Binary: `C:\Program Files\Git\cmd\git.exe`. |
+| **gh** | Full path **from the Bash tool** so it inherits git: `"/c/Program Files/GitHub CLI/gh.exe" …`. Never bare `gh` in PowerShell ("unable to find git executable"). |
+| **node/npm** | Lives at `C:\Program Files\nodejs` (on integrated-terminal PATH via `.vscode/settings.json`). If a fresh shell can't find it: `$env:PATH = "C:\Program Files\nodejs;$env:PATH"; & "C:\Program Files\nodejs\npm.cmd" <args>`. |
 
-- `python ingest/run.py` — fetch + enrich + dedup → `data/jobs.jsonl` (daily).
+- `./py.ps1 ingest/run.py` — fetch + enrich + dedup → `data/jobs.jsonl` (daily).
 - Ask Claude: *"triage the new jobs"* → invokes the triage subagent.
-- `python evals/run_eval.py` — score triage against the gold set.
+- `./py.ps1 evals/run_eval.py` — score triage against the gold set.
+- `api/serve.ps1` — run the FastAPI backend (Swagger at `/docs`).
+- `cd web; npm run dev` — frontend dev server → Vite on http://localhost:5173.
 
 ## Reference files
 - `profile/cv.md` — full CV. `profile/criteria.md` — triage rules. `profile/cover-template.md` — master letter.
+- `profile/parameters.md` — scoring factors (incl. factor 10, company-size soft drag).
+- `profile/experience-map.md` — depth-tagged capability surface read by triage.
 - Salary anchors, target companies, and preferences live in `profile/criteria.md`.
+- `ROADMAP.md` — phase history + what's next. `docs/ENV.md` — full tooling-path rationale.
