@@ -55,8 +55,15 @@ def health() -> dict:
 def get_jobs(
     status: str | None = Query(None, description="Filter by status: new|shortlisted|applied|skipped"),
     verdict: str | None = Query(None, description="Filter by triage_verdict: strong fit|fit|stretch|reject"),
+    window: int | None = Query(None, ge=1, description="Dashboard VIEW: only jobs posted within N days OR touched by a human (durable-pool filter). Omit for the full pool."),
 ) -> list[JobSummary]:
-    """List jobs as summaries (no description), optionally filtered, strongest verdict first."""
+    """List jobs as summaries (no description), strongest verdict first.
+
+    Two modes: with `window`, returns the durable-pool dashboard VIEW (this run's fresh
+    results plus anything approved/applied/noted, regardless of age — Phase D). Without it,
+    returns the full pool, optionally filtered by status/verdict."""
+    if window is not None:
+        return [JobSummary.from_record(r) for r in ds.dashboard_jobs(window_days=window)]
     return [JobSummary.from_record(r) for r in ds.list_jobs(status=status, verdict=verdict)]
 
 
@@ -64,6 +71,31 @@ def get_jobs(
 def get_job(job_id: str) -> JobDetail:
     """Full record for one job, including the description and triage trail."""
     rec = ds.get_job(job_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"No job with id {job_id!r}")
+    return JobDetail.from_record(rec)
+
+
+class JobActionPatch(BaseModel):
+    """Body for PATCH /jobs/{id} — the first WRITE endpoint. All fields optional; only the
+    provided ones change. status drives Approve (shortlisted) / Remove (skipped, soft)."""
+    status: str | None = None        # new | shortlisted | applied | skipped
+    notes: str | None = None
+    applied_date: str | None = None  # ISO date string
+
+
+_STATUSES = {"new", "shortlisted", "applied", "skipped"}
+
+
+@app.patch("/jobs/{job_id}", response_model=JobDetail)
+def patch_job(job_id: str, patch: JobActionPatch) -> JobDetail:
+    """Persist a human review action (status / notes / applied-date) — makes the previously
+    LOCAL-ONLY dashboard actions survive a refresh. Writes job_actions, never the ad row."""
+    if patch.status is not None and patch.status not in _STATUSES:
+        raise HTTPException(status_code=400, detail=f"status must be one of {sorted(_STATUSES)}")
+    rec = ds.patch_job_action(
+        job_id, status=patch.status, notes=patch.notes, applied_date=patch.applied_date
+    )
     if rec is None:
         raise HTTPException(status_code=404, detail=f"No job with id {job_id!r}")
     return JobDetail.from_record(rec)

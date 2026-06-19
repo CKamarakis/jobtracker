@@ -1,39 +1,38 @@
-"""api/data_source.py — THE SEAM (Phase B).
+"""api/data_source.py — THE SEAM (Phase B seam, Phase D store swap).
 
 This is the single module the rest of the API talks to. Routes in `main.py` call
-functions here; they never `open()` a file or know a path. Today every function
-reads the existing pipeline artifacts (data/jobs.jsonl, profile/*.md, dossiers,
-cover letters). In Phase D, Postgres replaces the *bodies* of these functions and
-nothing else in the codebase changes — that is the whole "files now, DB later"
-bet from ROADMAP.md, made concrete in one file.
+functions here; they never `open()` a file or know a path. Job reads/writes now go to
+**Postgres** via the `db.repository` package (Phase D); the markdown docs (profile,
+dossiers, cover letters) are still flat files. The job-function BODIES changed; their
+signatures, the routes, the Pydantic models, and the React app did not — the whole
+"files now, DB later behind a stable seam" bet from ROADMAP.md, made concrete in one file.
 
 Design rules:
-- Read-only. Phase B serves; it does not mutate. Writes (shortlist, notes,
-  applied-dates) arrive with the DB in Phase D, behind new functions here.
 - No FastAPI/Pydantic imports. This layer returns plain dicts/strings so it stays
   swappable and unit-testable without the web stack. Shaping into response models
   is the route layer's job.
-- Reuse the pipeline's own loader (ingest.store.load_jobs) so the API and the
-  ingest code can never drift on how a record is parsed.
+- Job reads/writes delegate to db.repository (Phase D). The markdown docs (profile,
+  dossiers, cover letters) are still flat files — they were never the thing the DB
+  was for, so they stay on disk behind the same seam.
+
+PHASE D — the seam swap, made concrete: the job functions below changed their BODIES
+to call db.repository instead of reading data/jobs.jsonl. Their signatures, the routes
+in main.py, the Pydantic models, and the entire React app are UNCHANGED. That zero-line
+ripple is the whole "files now, Postgres later behind a stable seam" thesis, proven.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-# Repo root = parent of this api/ package. All artifact paths derive from it, so the
-# server can be launched from anywhere.
+from db import repository as repo
+
+# Repo root = parent of this api/ package. Markdown-doc paths derive from it, so the
+# server can be launched from anywhere. (Jobs no longer have a file path — they're in PG.)
 REPO_ROOT = Path(__file__).resolve().parent.parent
-JOBS_PATH = REPO_ROOT / "data" / "jobs.jsonl"
 PROFILE_DIR = REPO_ROOT / "profile"
 DOSSIER_DIR = REPO_ROOT / "data" / "dossiers"
 COVER_DIR = REPO_ROOT / "output" / "cover-letters"
-
-# Reuse the ingest loader rather than re-parsing JSONL here (one source of truth for
-# what a record looks like). ingest/ isn't an installed package, so add it to sys.path.
-sys.path.insert(0, str(REPO_ROOT / "ingest"))
-import store  # noqa: E402  (path-dependent import, intentional)
 
 
 # Fields returned in LIST views. The full record (incl. the long `description`) is
@@ -41,6 +40,7 @@ import store  # noqa: E402  (path-dependent import, intentional)
 SUMMARY_FIELDS = (
     "id", "source", "company", "title", "location", "remote",
     "url", "ats_url", "posted_date", "status", "triage_verdict", "triage_reason",
+    "notes",  # lightweight human note; in the list so its indicator survives a refresh
 )
 
 
@@ -48,27 +48,30 @@ def _summary(rec: dict) -> dict:
     return {k: rec.get(k) for k in SUMMARY_FIELDS}
 
 
-# --- Jobs ----------------------------------------------------------------------
+# --- Jobs (delegated to db.repository — Phase D) -------------------------------
 
 def list_jobs(status: str | None = None, verdict: str | None = None) -> list[dict]:
     """All jobs as summaries, optionally filtered by status and/or triage_verdict.
     Sorted by verdict strength (strong fit → reject → untriaged), then company."""
-    jobs = store.load_jobs(JOBS_PATH).values()
-    rows = [
-        _summary(r) for r in jobs
-        if (status is None or r.get("status") == status)
-        and (verdict is None or r.get("triage_verdict") == verdict)
-    ]
-    rows.sort(key=lambda r: (_VERDICT_ORDER.get(r.get("triage_verdict"), 99), (r.get("company") or "").lower()))
-    return rows
+    return [_summary(r) for r in repo.list_jobs(status=status, verdict=verdict)]
+
+
+def dashboard_jobs(window_days: int = 1) -> list[dict]:
+    """Durable-pool VIEW as summaries: this run's fresh results PLUS anything touched.
+    Replaces the old wipe-on-fetch — see db.repository.dashboard_jobs."""
+    return [_summary(r) for r in repo.dashboard_jobs(window_days=window_days)]
 
 
 def get_job(job_id: str) -> dict | None:
     """Full record (incl. description) for one job, or None if the id is unknown."""
-    return store.load_jobs(JOBS_PATH).get(job_id)
+    return repo.get_job(job_id)
 
 
-_VERDICT_ORDER = {"strong fit": 0, "fit": 1, "stretch": 2, "reject": 3}
+def patch_job_action(job_id: str, status: str | None = None, notes: str | None = None,
+                     applied_date: str | None = None) -> dict | None:
+    """Persist a human review action (status/notes/applied-date). First WRITE path through
+    the seam. Returns the updated full record, or None if the job id is unknown."""
+    return repo.patch_action(job_id, status=status, notes=notes, applied_date=applied_date)
 
 
 # --- Profile / dossiers / cover letters (markdown blobs) -----------------------

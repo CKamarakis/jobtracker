@@ -25,6 +25,7 @@ export interface JobSummary {
   status: Status | null;
   triage_verdict: Verdict | null;
   triage_reason: string | null;
+  notes: string | null;
 }
 
 /** Detail-view shape — mirrors JobDetail (JobSummary + body & triage trail). */
@@ -69,4 +70,12 @@ export interface FetchStatus {
 export interface FetchRequest {
   sources?: string[] | null;     // null/omitted → all available sources
   duration: string;              // 1d | 3d | 1w
+}
+
+/** Body for PATCH /jobs/{id} — mirrors api.main.JobActionPatch. Only provided fields
+ *  change; the rest are left as-is. The first WRITE path that persists human review. */
+export interface JobActionPatch {
+  status?: Status;
+  notes?: string;
+  applied_date?: string;         // ISO date
 }

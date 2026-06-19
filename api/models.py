@@ -30,6 +30,7 @@ class JobSummary(BaseModel):
     status: str | None = None
     triage_verdict: str | None = None
     triage_reason: str | None = None  # one-line rationale; surfaced on the rejects list
+    notes: str | None = None          # lightweight human note (job_actions.notes)
 
     @classmethod
     def from_record(cls, rec: dict) -> "JobSummary":

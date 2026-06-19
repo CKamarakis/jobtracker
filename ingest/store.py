@@ -115,9 +115,11 @@ def merge_job(existing: dict, incoming: dict) -> dict:
 
     # Preserve distinct non-primary cities seen across the collapse (incl. any already
     # accumulated on either record). Excludes the primary location and empties.
-    primary = merged.get("location", "")
-    seen = set(existing.get("alt_locations", [])) | set(incoming.get("alt_locations", []))
-    seen |= {existing.get("location", ""), incoming.get("location", "")}
+    primary = merged.get("location") or ""
+    # `or []`/`or ""` (not a .get default): a record can carry the key explicitly set to None
+    # (the DB→dict mapping does), and .get(k, default) returns that None, not the default.
+    seen = set(existing.get("alt_locations") or []) | set(incoming.get("alt_locations") or [])
+    seen |= {existing.get("location") or "", incoming.get("location") or ""}
     alts = sorted(loc for loc in seen if loc and loc != primary)
     if alts:
         merged["alt_locations"] = alts
