@@ -6,6 +6,7 @@
 import type {
   FetchRequest,
   FetchStatus,
+  JobActionPatch,
   JobDetail,
   JobSummary,
   MarkdownDoc,
@@ -57,6 +58,15 @@ function post<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+/** PATCH JSON (same error/network handling as post). Used for partial job-action updates. */
+function patch<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 /** Build a query string from defined params only (skip undefined/null). */
 function qs(params: Record<string, string | undefined>): string {
   const entries = Object.entries(params).filter(([, v]) => v != null && v !== "");
@@ -72,6 +82,12 @@ export function listJobs(filters: { status?: Status; verdict?: Verdict } = {}): 
 
 export function getJob(id: string): Promise<JobDetail> {
   return request<JobDetail>(`/jobs/${encodeURIComponent(id)}`);
+}
+
+/** Persist a review action (status / notes / applied-date). Phase D's first WRITE on a job —
+ * what makes the review actions survive a refresh. Returns the updated detail record. */
+export function patchJob(id: string, body: JobActionPatch): Promise<JobDetail> {
+  return patch<JobDetail>(`/jobs/${encodeURIComponent(id)}`, body);
 }
 
 // --- Fetch run (WRITE path) --------------------------------------------------

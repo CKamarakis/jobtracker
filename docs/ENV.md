@@ -30,6 +30,34 @@ with `where` / `Get-Command` / `Test-Path` / Glob, burns turns, and learns nothi
 - If a fresh shell can't find it, prepend inline:
   `$env:PATH = "C:\Program Files\nodejs;$env:PATH"; & "C:\Program Files\nodejs\npm.cmd" <args>`
 
+## Postgres (Phase D — the durable store)
+Local dev Postgres is a **portable EnterpriseDB binary build** — no installer, no Windows
+service, no admin/UAC. Chosen over the installer because it's self-contained and trivially
+reversible (delete one folder), and over Docker because the reproducibility payoff isn't
+here for a solo local DB yet (deferred → backlog G6). SQLAlchemy is connection-string
+agnostic, so moving to a service/container later is a `DATABASE_URL` change, not a rewrite.
+
+- **Binaries:** `C:\Users\Chris\pgportable\pgsql\bin` (initdb, pg_ctl, psql). Cluster data:
+  `C:\Users\Chris\pgportable\data`. Both live OUTSIDE the repo (nothing to gitignore).
+- **Port 5433** (not 5432) so it never clashes with any system Postgres. Superuser `jobhunt`,
+  password `jobhunt`, database `jobhunt`.
+- **Control script:** `./db/pg.ps1 start | stop | status | psql | restart`.
+- **Connection string** (db/engine.py default, override via `$DATABASE_URL`):
+  `postgresql+psycopg://jobhunt:jobhunt@localhost:5433/jobhunt`
+- **Migrations (Alembic):** `& <python> -m alembic upgrade head` from the repo root (the
+  `alembic` console script isn't on PATH; invoke via `python -m alembic`). Config: `alembic.ini`
+  + `alembic/env.py` (URL pulled from `$DATABASE_URL`, metadata from `db.models.Base`).
+- **Seed from the old JSONL pool:** `./py.ps1 db/seed.py` (idempotent; upsert).
+
+### Rebuilding the dev DB from scratch (if the folder is lost)
+```
+& <bin>\initdb.exe -D <data> -U jobhunt --pwfile=<file-with-password> -E UTF8 --auth=scram-sha-256
+./db/pg.ps1 start
+& <bin>\psql.exe -U jobhunt -h localhost -p 5433 -d postgres -c "CREATE DATABASE jobhunt OWNER jobhunt;"
+& <python> -m alembic upgrade head
+./py.ps1 db/seed.py
+```
+
 ## Permanent fix in place
 `.vscode/settings.json` puts these dirs on the integrated-terminal PATH. The gotcha only
 bites fresh/stale tool shells — when it does, fall back to the verbatim paths above.

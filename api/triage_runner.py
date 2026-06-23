@@ -12,9 +12,13 @@ SEAM (see memory: project_triage_llm_seam):
   so the on-disk files stay the single source of truth. Inlining (vs. letting the agent Read)
   keeps the call a deterministic single turn with no tool-permission surface.
 
-SEEN-GUARD: `data/triage_cache.json` maps job id → cached verdict. The pool is wiped every
-fetch, so without this every run would re-score ads seen yesterday. Repeats hydrate from the
-cache for free; only genuinely-new jobs hit the LLM.
+SEEN-GUARD: `data/triage_cache.json` maps job id → cached verdict. Kept as a belt-and-braces
+optimisation; with the Phase D durable pool a scored job already carries its verdict (the
+upsert preserves it), so re-scoring is mostly avoided anyway. The cache still spares a re-score
+if a verdict column ever gets cleared.
+
+PHASE D: reads candidates and writes verdicts through `db.repository` (Postgres), not the
+JSONL file. Triage is an ingest-side enrichment of the ad row, so verdicts land on `jobs`.
 """
 
 from __future__ import annotations
@@ -26,7 +30,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-JOBS_PATH = REPO_ROOT / "data" / "jobs.jsonl"
 CACHE_PATH = REPO_ROOT / "data" / "triage_cache.json"
 AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "triage.md"
 PROFILE_DIR = REPO_ROOT / "profile"
@@ -46,8 +49,8 @@ SYSTEM_ROLE = (
     "Respond in a single message containing only the JSON array specified — no prose, no fence."
 )
 
-sys.path.insert(0, str(REPO_ROOT / "ingest"))
-import store  # noqa: E402  (path-dependent import, intentional — same loader as ingest/API)
+sys.path.insert(0, str(REPO_ROOT))
+from db import repository as repo  # noqa: E402  (Phase D: candidates/verdicts live in Postgres)
 
 
 # ── Prompt assembly ───────────────────────────────────────────────────────────
@@ -179,13 +182,11 @@ async def _run(progress=None) -> dict:
         if progress:
             progress("triage", msg, counts)
 
-    jobs = store.load_jobs(JOBS_PATH)
     cache = _load_cache()
     now = datetime.now(timezone.utc).isoformat()
 
-    # Candidates: admitted, untriaged jobs. (skipped/expired already carry skip_reason.)
-    candidates = [r for r in jobs.values()
-                  if r.get("status") == "new" and not r.get("triage_verdict")]
+    # Candidates: admitted, untriaged jobs (derived status 'new', no verdict). From Postgres.
+    candidates = repo.triage_candidates()
 
     cached = to_score = 0
     pending: list[dict] = []
@@ -193,6 +194,7 @@ async def _run(progress=None) -> dict:
         hit = cache.get(rec["id"])
         if hit and hit.get("verdict") in VALID_VERDICTS:
             _apply(rec, hit, now)
+            repo.apply_triage(rec["id"], hit["verdict"], hit.get("reason"), rec["triaged_date"])
             cached += 1
         else:
             pending.append(rec)
@@ -224,13 +226,13 @@ async def _run(progress=None) -> dict:
             if rec is None or v.get("verdict") not in VALID_VERDICTS:
                 continue
             _apply(rec, v, now)
+            repo.apply_triage(rec["id"], v["verdict"], v.get("reason"), rec["triaged_date"])
             cache[rec["id"]] = {
                 "verdict": v["verdict"], "fit": v.get("fit"),
                 "anti_fit": v.get("anti_fit"), "reason": v.get("reason"), "triaged_date": now,
             }
             scored += 1
 
-    store.save_jobs(JOBS_PATH, jobs)
     _save_cache(cache)
 
     summary = {"candidates": len(candidates), "cached": cached, "scored": scored, "failed": failed}

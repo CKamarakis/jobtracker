@@ -1,14 +1,15 @@
 """ingest/run.py — ingestion orchestrator.
 
-Fetches the selected sources for a chosen freshness window and writes the pool to
-data/jobs.jsonl. Deterministic and LLM-free by design (CLAUDE.md): it can run unattended
-and cannot hallucinate. Add a new source by registering its `fetch()` in SOURCES below.
+Fetches the selected sources for a chosen freshness window and UPSERTS the pool into
+Postgres (db.repository). Deterministic and LLM-free by design (CLAUDE.md): it can run
+unattended and cannot hallucinate. Add a new source by registering its `fetch()` in SOURCES.
 
-EPHEMERAL POOL (app model): each run WIPES and replaces the pool with the current
-search's results — the pool is scratch, not an accumulator. Jobs the user wants to keep
-are moved out into the saved-jobs store / applications DB (later slices), so wiping never
-loses human work. (This replaces the old cross-run dedup/merge + re-aging; cross-SOURCE
-dedup within a single run is still done.)
+DURABLE POOL (Phase D): each run UPSERTS its results into Postgres (db.repository) —
+the pool accumulates and is dedup-merged across runs, never wiped. Human edits live in a
+separate table ingest never touches, so a re-fetch can't reset an approved/applied job to
+`new`. (The dashboard shows a fresh-window VIEW over this durable pool — see
+db.repository.dashboard_jobs — which gives the same clean "last run" feel as the old wipe
+without losing anything.) Cross-SOURCE dedup within a single run still happens here first.
 
 Usage:
     python ingest/run.py                      # all sources, 1-day window
@@ -19,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -29,7 +31,10 @@ import filters
 import store
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-JOBS_PATH = REPO_ROOT / "data" / "jobs.jsonl"
+# run.py is launched as a script (`./py.ps1 ingest/run.py`), so sys.path[0] is ingest/, not
+# the repo root — add the root so `db` (the Phase D persistence package) imports cleanly.
+sys.path.insert(0, str(REPO_ROOT))
+from db import repository as repo  # noqa: E402
 
 # Search-duration knob the app exposes → days. Each source maps it to its own native
 # freshness control (arbeitnow: client-side hours cutoff; adzuna: API max_days_old).
@@ -63,7 +68,7 @@ def run_ingest(
     duration: str = DEFAULT_DURATION,
     progress: Callable[[str, str, dict | None], None] | None = None,
 ) -> dict:
-    """Wipe the pool and refill it from `sources` over the `duration` window.
+    """Fetch `sources` over the `duration` window and UPSERT them into the durable pool.
 
     sources:  subset of available_sources(); None/empty → all.
     duration: one of DURATION_DAYS keys ("1d"|"3d"|"1w").
@@ -82,7 +87,7 @@ def run_ingest(
     fresh_hours = days * 24 + 4  # small buffer, mirrors arbeitnow's ingest-time slack
     today = datetime.now(timezone.utc).date()
 
-    jobs: dict[str, dict] = {}  # fresh pool — wipe-and-replace, no prior load
+    jobs: dict[str, dict] = {}  # this run's records, cross-SOURCE merged before the upsert
     added = merged = skipped = 0
     per_source: dict[str, int | str] = {}
 
@@ -102,23 +107,28 @@ def run_ingest(
                 jobs[key] = store.merge_job(jobs[key], rec)
                 merged += 1
             else:
-                # New record: metadata gate. Rejected jobs are kept, stamped skipped.
+                # New record: metadata gate. Rejected jobs are kept, stamped with skip_reason
+                # (a jobs column). NB: do NOT set status here — status is human-owned in
+                # job_actions; the pre-filter drop is read as 'skipped' via skip_reason.
                 reason = filters.prefilter(rec, today=today)
                 if reason:
-                    rec["status"] = "skipped"
                     rec["skip_reason"] = reason
                     skipped += 1
                 jobs[key] = rec
                 added += 1
 
-    emit("write", "writing pool", {"pool": len(jobs)})
-    store.save_jobs(JOBS_PATH, jobs)
+    # Durable upsert into Postgres — merges across runs, never wipes, never touches
+    # job_actions (so an approved/applied job re-seen on the board keeps its status).
+    emit("write", "upserting pool", {"pool": len(jobs)})
+    counts = repo.upsert_jobs(list(jobs.values()))
 
     summary = {
         "pool": len(jobs),
         "added": added,
         "merged": merged,
         "skipped": skipped,
+        "inserted": counts["inserted"],
+        "updated": counts["updated"],
         "duration": duration,
         "sources": selected,
         "per_source": per_source,
@@ -131,8 +141,10 @@ def main(duration: str = DEFAULT_DURATION, sources: list[str] | None = None) -> 
     ps = ", ".join(f"{k}={v}" for k, v in summary["per_source"].items())
     print(
         f"Done ({summary['duration']}, sources: {', '.join(summary['sources'])}). "
-        f"+{summary['added']} new ({summary['skipped']} pre-filtered), "
-        f"{summary['merged']} cross-source merged. Pool: {summary['pool']} jobs. [{ps}]"
+        f"This run: +{summary['added']} ({summary['skipped']} pre-filtered), "
+        f"{summary['merged']} cross-source merged. "
+        f"DB upsert: {summary['inserted']} inserted, {summary['updated']} updated. "
+        f"Run size: {summary['pool']} jobs. [{ps}]"
     )
 
 

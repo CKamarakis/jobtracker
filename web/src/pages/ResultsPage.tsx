@@ -8,7 +8,7 @@ import {
   StickyNoteIcon,
   Trash2Icon,
 } from "lucide-react";
-import { getFetchStatus, listJobs, waitForFetch } from "@/api/client";
+import { getFetchStatus, listJobs, patchJob, waitForFetch } from "@/api/client";
 import type { JobSummary } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { JobDetailDialog } from "@/components/JobDetailDialog";
@@ -35,9 +35,10 @@ import { cn } from "@/lib/utils";
 // run to finish (one long-poll — no client polling), then show the fresh pool as a
 // flat table the user works through: open the ad, jot a note, drop it, or approve it.
 //
-// The notes / remove / approve actions are UX-ONLY for now: they mutate LOCAL component
-// state (ephemeral, reset on reload) and hit no backend. Persistence (write endpoints)
-// lands in a later pass. The view + external-link actions are real.
+// PERSISTED (Phase D): notes / remove / approve now PATCH /jobs/{id}, so they survive a
+// refresh. Local state mirrors the server for instant feedback and is SEEDED from each job's
+// persisted status/notes on load, so a reload shows your prior decisions. Writes are
+// optimistic (update UI, fire PATCH); a failed write surfaces in `error` but we keep it simple.
 
 export function ResultsPage() {
   // One mount-time flow, no polling: read run state → if a run is in flight, await it
@@ -74,13 +75,29 @@ export function ResultsPage() {
 
   const loading = jobs === null && !error;
 
-  // Local-only review state (ephemeral — see header note).
+  // Review state mirrors the server for instant feedback; seeded from persisted status/notes
+  // when the pool loads (so a refresh restores prior decisions — the Phase D point).
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [notesFor, setNotesFor] = useState<string | null>(null);
   // Which job's full info is open in the detail modal (null = closed).
   const [viewId, setViewId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!jobs) return;
+    setRemoved(new Set(jobs.filter((j) => j.status === "skipped").map((j) => j.id)));
+    setApproved(new Set(jobs.filter((j) => j.status === "shortlisted").map((j) => j.id)));
+    setNotes(Object.fromEntries(jobs.filter((j) => j.notes).map((j) => [j.id, j.notes as string])));
+  }, [jobs]);
+
+  // Persist a review action; revert local state if the write fails (optimistic UI).
+  function persist(id: string, body: Parameters<typeof patchJob>[1], revert: () => void) {
+    patchJob(id, body).catch((e) => {
+      setError(e as Error);
+      revert();
+    });
+  }
 
   // The review queue is only what PASSED triage (strong fit / fit / stretch). Triage
   // rejects are split off to their own page (linked via the CTA below); title-prefiltered
@@ -100,14 +117,32 @@ export function ResultsPage() {
 
   function remove(id: string) {
     setRemoved((prev) => new Set(prev).add(id));
+    // Remove = soft skip (Chris wants data kept, never hard-deleted).
+    persist(id, { status: "skipped" }, () =>
+      setRemoved((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      }),
+    );
   }
   function toggleApprove(id: string) {
+    const wasApproved = approved.has(id);
     setApproved((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
+      if (wasApproved) next.delete(id);
       else next.add(id);
       return next;
     });
+    // Approve → shortlisted; un-approve → back to new.
+    persist(id, { status: wasApproved ? "new" : "shortlisted" }, () =>
+      setApproved((prev) => {
+        const next = new Set(prev);
+        if (wasApproved) next.add(id);
+        else next.delete(id);
+        return next;
+      }),
+    );
   }
 
   // While the background run is in flight, the whole view is just the wait state —
@@ -266,7 +301,12 @@ export function ResultsPage() {
         initial={notesFor ? notes[notesFor] ?? "" : ""}
         onOpenChange={(o) => !o && setNotesFor(null)}
         onSave={(text) => {
-          if (notesFor) setNotes((prev) => ({ ...prev, [notesFor]: text }));
+          if (notesFor) {
+            const id = notesFor;
+            const prevText = notes[id] ?? "";
+            setNotes((prev) => ({ ...prev, [id]: text }));
+            persist(id, { notes: text }, () => setNotes((prev) => ({ ...prev, [id]: prevText })));
+          }
           setNotesFor(null);
         }}
       />
@@ -278,7 +318,7 @@ export function ResultsPage() {
   );
 }
 
-/** Local-only note editor. The text lives in the parent's state (not persisted yet). */
+/** Note editor. The draft seeds from the row's persisted note; the parent persists on save. */
 function NotesDialog({
   open,
   initial,
@@ -299,7 +339,7 @@ function NotesDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Note</DialogTitle>
-          <DialogDescription>Not saved to the server yet — local to this session.</DialogDescription>
+          <DialogDescription>Saved to the job and kept across refreshes.</DialogDescription>
         </DialogHeader>
         <textarea
           autoFocus

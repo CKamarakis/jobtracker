@@ -134,6 +134,14 @@ class TestMergeJob:
         incoming = self._base(location="Berlin")
         assert "alt_locations" not in store.merge_job(existing, incoming)
 
+    def test_tolerates_explicit_none_alt_locations(self):
+        # The DB→dict mapping carries alt_locations as an explicit None (not absent), and
+        # .get(k, default) returns that None — merge must not choke on set(None). Regression.
+        existing = self._base(location="Berlin", alt_locations=None)
+        incoming = self._base(location="Berlin", alt_locations=None)
+        # Must not raise, and must not fabricate alt cities for a single-city role.
+        assert not store.merge_job(existing, incoming).get("alt_locations")
+
     def test_does_not_mutate_inputs(self):
         existing = self._base(status="applied", source=["arbeitnow"])
         incoming = self._base(status="new", source=["adzuna"])
