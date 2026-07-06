@@ -128,6 +128,22 @@ soft drag, not a hard filter — see factor 10 in `profile/parameters.md`.)
 - `api/serve.ps1` — run the FastAPI backend (Swagger at `/docs`).
 - `cd web; npm run dev` — frontend dev server → Vite on http://localhost:5173.
 
+### Dev-stack control — ONE COMMAND, TRUST ITS OUTPUT (hard rule)
+
+Starting/stopping the stack must take seconds, not minutes. The friction is never the
+scripts — it's the assistant re-verifying by hand. Enforce:
+
+- **Start:** run `./up.ps1` (or `./down.ps1`) **once, in the FOREGROUND.** Never wrap it
+  in `Measure-Command` and never launch it with `run_in_background` — that buffers its
+  output and orphans/kills the spawned servers.
+- **The script's printed lines ARE the verification.** `up.ps1` already probes `/health`,
+  `pg.ps1` uses `pg_isready`, `serve.ps1` polls before printing "ready." So after running
+  it, **report its output verbatim and STOP.** Do **not** run any follow-up probe
+  (`pg_isready`, `Invoke-RestMethod /health`, `Get-NetTCPConnection`, port checks). Those
+  are redundant, each costs a permission prompt + round-trip, and are the entire reason
+  this ever felt slow.
+- Only diagnose further if the script itself prints `FAILED`.
+
 ## Reference files
 - `profile/cv.md` — full CV. `profile/criteria.md` — triage rules. `profile/cover-template.md` — master letter.
 - `profile/parameters.md` — scoring factors (incl. factor 10, company-size soft drag).

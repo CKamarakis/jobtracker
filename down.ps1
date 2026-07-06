@@ -15,7 +15,8 @@
 [CmdletBinding()]
 param([switch]$KeepPostgres)
 
-$ErrorActionPreference = 'Stop'
+# Default (Continue) on purpose: a native-exe stderr warning during teardown must not
+# abort the script and leave a tier half-stopped. Mirror of up.ps1's header rationale.
 $Root = $PSScriptRoot
 
 # --- Web ---------------------------------------------------------------------
